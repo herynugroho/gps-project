@@ -376,8 +376,20 @@
 
         function formatTime(dateString) {
             if(!dateString) return '-';
-            const date = new Date(dateString);
-            return date.toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'});
+            
+            // FIX TIMEZONE:
+            // Data dari database biasanya format "YYYY-MM-DD HH:mm:ss" (UTC).
+            // Kita ubah jadi ISO format dengan akhiran 'Z' (Zulu/UTC) -> "YYYY-MM-DDTHH:mm:ssZ"
+            // Ini memberi tahu browser: "Hei, ini jam UTC loh, tolong konversi ke jam lokal user (WITA/WIB) dong!"
+            const safeDateString = dateString.replace(' ', 'T') + 'Z';
+            const date = new Date(safeDateString);
+
+            // Tampilkan dalam format Indonesia (24 Jam)
+            return date.toLocaleTimeString('id-ID', {
+                hour: '2-digit', 
+                minute:'2-digit',
+                hour12: false
+            });
         }
 
         // Jalankan
