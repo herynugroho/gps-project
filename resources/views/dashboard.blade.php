@@ -21,7 +21,6 @@
         body { font-family: 'Inter', sans-serif; }
         #map { height: 100%; width: 100%; z-index: 0; }
         
-        /* Pulse Animation */
         .pulse-ring {
             border: 3px solid #10B981;
             border-radius: 30px;
@@ -36,27 +35,17 @@
             100% {transform: scale(1.2, 1.2); opacity: 0.0;}
         }
 
-        /* Hide Scrollbar for Cleaner Look */
-        .no-scrollbar::-webkit-scrollbar {
-            display: none;
-        }
-        .no-scrollbar {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
 <body class="bg-gray-100 h-screen flex overflow-hidden relative">
 
-    <!-- 1. MOBILE OVERLAY (BACKDROP) -->
-    <!-- Muncul saat sidebar dibuka di HP -->
+    <!-- MOBILE OVERLAY -->
     <div id="mobile-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black bg-opacity-50 z-30 hidden md:hidden transition-opacity"></div>
 
-    <!-- 2. SIDEBAR (RESPONSIVE DRAWER) -->
-    <!-- Di HP: Fixed position, hidden by default (translate-x). Di Desktop: Relative, always visible. -->
+    <!-- SIDEBAR -->
     <aside id="sidebar" class="fixed inset-y-0 left-0 w-80 bg-white shadow-2xl z-40 transform -translate-x-full md:translate-x-0 md:relative md:shadow-xl transition-transform duration-300 ease-in-out flex flex-col h-full">
-        
-        <!-- Sidebar Header -->
         <div class="p-5 border-b border-gray-100 bg-slate-900 text-white flex items-center justify-between shrink-0">
             <div class="flex items-center gap-3">
                 <div class="w-8 h-8 bg-blue-500 rounded flex items-center justify-center font-bold shadow-lg">P</div>
@@ -65,17 +54,14 @@
                     <p class="text-xs text-blue-200">Tracking System</p>
                 </div>
             </div>
-            <!-- Tombol Close (Hanya di Mobile) -->
             <button onclick="toggleSidebar()" class="md:hidden text-gray-400 hover:text-white">
                 <i class="fa-solid fa-xmark text-xl"></i>
             </button>
-            <!-- Tombol Tambah (Desktop) -->
             <a href="{{ route('devices.create') }}" class="hidden md:flex bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-full w-8 h-8 items-center justify-center transition shadow-lg" title="Tambah Armada">
                 <i class="fa-solid fa-plus text-sm"></i>
             </a>
         </div>
 
-        <!-- Statistik Ringkas -->
         <div class="p-3 bg-gray-50 border-b shrink-0">
             <div class="grid grid-cols-3 gap-2 text-center text-xs">
                 <div class="bg-white p-2 rounded shadow-sm border border-gray-100">
@@ -88,13 +74,11 @@
                     <span class="block font-bold text-lg text-gray-500" id="stat-offline">0</span> Offline
                 </div>
             </div>
-            <!-- Tombol Tambah (Mobile Only - Muncul di bawah statistik) -->
             <a href="{{ route('devices.create') }}" class="mt-3 flex md:hidden items-center justify-center gap-2 w-full bg-blue-600 text-white py-2 rounded text-sm font-bold shadow">
                 <i class="fa-solid fa-plus"></i> Tambah Armada Baru
             </a>
         </div>
 
-        <!-- List Kendaraan (Scrollable) -->
         <div class="flex-1 overflow-y-auto no-scrollbar" id="vehicle-list">
             <div class="p-10 text-center text-gray-400 text-sm flex flex-col items-center">
                 <i class="fa-solid fa-circle-notch fa-spin text-blue-500 text-2xl mb-2"></i> 
@@ -102,17 +86,15 @@
             </div>
         </div>
         
-        <!-- Footer Info -->
         <div class="p-2 text-center text-[10px] text-gray-400 border-t shrink-0">
             System Live &bull; v1.0
         </div>
     </aside>
 
-    <!-- 3. MAIN CONTENT (MAP) -->
+    <!-- MAIN CONTENT -->
     <main class="flex-1 flex flex-col relative w-full h-full">
         
-        <!-- MOBILE HEADER TOGGLE -->
-        <!-- Tombol Menu melayang di atas peta -->
+        <!-- MOBILE HEADER -->
         <div class="absolute top-4 left-4 z-10 md:hidden flex items-center gap-2">
             <button onclick="toggleSidebar()" class="bg-white text-slate-900 p-2.5 rounded-lg shadow-lg active:scale-95 transition border border-gray-200">
                 <i class="fa-solid fa-bars text-lg"></i>
@@ -123,13 +105,13 @@
         </div>
 
         <!-- PETA -->
-        <div id="map" class="w-full h-full"></div>
+        <div id="map" class="w-full h-full bg-gray-200"></div>
 
-        <!-- 4. DETAIL PANEL (BOTTOM SHEET) -->
-        <!-- Responsive: Full width di mobile dengan margin kecil -->
-        <div id="detail-panel" class="absolute bottom-4 left-4 right-4 md:left-auto md:right-6 md:w-96 md:bottom-6 bg-white rounded-xl shadow-2xl z-20 p-5 transform translate-y-[150%] transition-transform duration-300 border border-gray-100 max-h-[60vh] overflow-y-auto">
+        <!-- DETAIL PANEL (BOTTOM SHEET STYLE) -->
+        <!-- Perubahan: bottom-0 di mobile, rounded-t-xl, pb-8 -->
+        <div id="detail-panel" class="absolute bottom-0 left-0 right-0 md:left-auto md:right-6 md:bottom-6 md:w-96 md:rounded-xl rounded-t-2xl bg-white shadow-[0_-5px_20px_rgba(0,0,0,0.1)] z-20 p-5 transform translate-y-[110%] transition-transform duration-300 border-t border-gray-200 md:border md:border-gray-100 pb-10 md:pb-5">
             
-            <!-- Handle Grip (Visual cue for mobile) -->
+            <!-- Handle Grip -->
             <div class="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4 md:hidden"></div>
 
             <button onclick="closeDetail()" class="absolute top-4 right-4 text-gray-400 hover:text-red-500 p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
@@ -159,12 +141,13 @@
                 <i class="fa-regular fa-clock text-blue-400"></i> Update: <span id="detail-time" class="text-gray-600 font-medium">-</span>
             </div>
 
+            <!-- Tombol Action -->
             <div class="grid grid-cols-2 gap-3">
-                <button onclick="goToHistory()" class="flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 active:bg-blue-800 transition shadow-sm">
+                <button onclick="goToHistory()" class="flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-lg text-sm font-semibold hover:bg-blue-700 active:bg-blue-800 transition shadow-sm">
                     <i class="fa-solid fa-route"></i> History
                 </button>
                 
-                <button class="flex items-center justify-center gap-2 bg-white text-red-600 border border-red-200 py-2.5 rounded-lg text-sm font-semibold hover:bg-red-50 active:bg-red-100 transition shadow-sm">
+                <button class="flex items-center justify-center gap-2 bg-white text-red-600 border border-red-200 py-3 rounded-lg text-sm font-semibold hover:bg-red-50 active:bg-red-100 transition shadow-sm">
                     <i class="fa-solid fa-power-off"></i> Matikan
                 </button>
             </div>
@@ -173,36 +156,27 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // === LOGIKA UI MOBILE ===
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('mobile-overlay');
 
         function toggleSidebar() {
-            // Toggle class translate untuk efek slide
             if (sidebar.classList.contains('-translate-x-full')) {
-                // Buka Sidebar
                 sidebar.classList.remove('-translate-x-full');
                 overlay.classList.remove('hidden');
             } else {
-                // Tutup Sidebar
                 sidebar.classList.add('-translate-x-full');
                 overlay.classList.add('hidden');
             }
         }
 
-        // === KONFIGURASI PETA ===
-        // Zoom control dipindah ke atas kanan agar tidak tertutup panel bawah di HP
         var map = L.map('map', { zoomControl: false }).setView([-5.147665, 119.432731], 12);
         L.control.zoom({ position: 'topright' }).addTo(map);
         
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: ''
-        }).addTo(map);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '' }).addTo(map);
 
         var markers = {};
         var selectedImei = null;
 
-        // === FUNGSI DATA & RENDER (Sama seperti sebelumnya) ===
         function updateData() {
             fetch('/api/gps-data')
                 .then(res => res.json())
@@ -210,19 +184,17 @@
                     renderSidebar(data);
                     renderMap(data);
                     updateStats(data);
-                    
                     if (selectedImei) {
                         const unit = data.find(d => d.imei === selectedImei);
                         if(unit) renderDetail(unit);
                     }
                 })
-                .catch(err => console.error("Gagal koneksi:", err));
+                .catch(err => console.error(err));
         }
 
         function renderMap(data) {
             data.forEach(unit => {
-                if (!unit.latitude) return; // Skip jika belum ada lokasi
-
+                if (!unit.latitude) return;
                 const lat = parseFloat(unit.latitude);
                 const lng = parseFloat(unit.longitude);
                 const isActive = unit.speed > 0;
@@ -237,7 +209,7 @@
                 const customIcon = L.divIcon({
                     className: 'custom-pin',
                     html: iconHtml,
-                    iconSize: [36, 36], // Sedikit lebih besar agar mudah disentuh di HP
+                    iconSize: [36, 36],
                     iconAnchor: [18, 18]
                 });
 
@@ -246,9 +218,7 @@
                     markers[unit.imei].setIcon(customIcon);
                 } else {
                     const marker = L.marker([lat, lng], {icon: customIcon}).addTo(map);
-                    marker.on('click', () => {
-                        focusUnit(unit.imei, lat, lng);
-                    });
+                    marker.on('click', () => { focusUnit(unit.imei, lat, lng); });
                     markers[unit.imei] = marker;
                 }
             });
@@ -284,7 +254,7 @@
                     statusColor = 'text-gray-400';
                     speedText = 'Menunggu Sinyal';
                     timeText = '-';
-                    onClickAction = "alert('Perangkat ini belum aktif / belum mengirim data GPS.')";
+                    onClickAction = "alert('Perangkat ini belum aktif.')";
                 }
 
                 const bgClass = selectedImei == unit.imei ? 'bg-blue-50 border-l-4 border-blue-500' : 'hover:bg-gray-50 border-l-4 border-transparent';
@@ -307,8 +277,6 @@
                 </div>
                 `;
             });
-            
-            // Render ulang hanya jika perlu (simpel DOM diffing bisa dilakukan nanti jika data ribuan)
             container.innerHTML = html;
         }
 
@@ -320,14 +288,8 @@
 
         function focusUnit(imei, lat, lng) {
             selectedImei = imei;
-            
-            // Di HP: Tutup sidebar otomatis saat mobil diklik biar peta kelihatan
-            if (window.innerWidth < 768) {
-                toggleSidebar(); 
-            }
-
+            if (window.innerWidth < 768) toggleSidebar();
             map.flyTo([lat, lng], 16);
-            
             fetch('/api/gps-data').then(r => r.json()).then(data => {
                 const unit = data.find(d => d.imei == imei);
                 if(unit) openDetail(unit);
@@ -337,7 +299,7 @@
         function openDetail(unit) {
             selectedImei = unit.imei;
             renderDetail(unit);
-            document.getElementById('detail-panel').classList.remove('translate-y-[150%]');
+            document.getElementById('detail-panel').classList.remove('translate-y-[150%]', 'translate-y-[110%]');
         }
 
         function renderDetail(unit) {
@@ -357,45 +319,35 @@
                     statusEl.className = "font-bold text-red-500";
                 }
             } else {
-                document.getElementById('detail-speed').innerText = "0";
-                document.getElementById('detail-time').innerText = "-";
                 document.getElementById('detail-status').innerText = "Menunggu Sinyal";
             }
         }
 
         function closeDetail() {
-            document.getElementById('detail-panel').classList.add('translate-y-[150%]');
+            // Gunakan translate yang sesuai mobile/desktop
+            const panel = document.getElementById('detail-panel');
+            if (window.innerWidth < 768) {
+                panel.classList.add('translate-y-[110%]');
+            } else {
+                panel.classList.add('translate-y-[150%]');
+            }
             selectedImei = null;
         }
 
         function goToHistory() {
-            if (selectedImei) {
-                window.location.href = '/device/' + selectedImei + '/history';
-            }
+            if (selectedImei) window.location.href = '/device/' + selectedImei + '/history';
         }
 
         function formatTime(dateString) {
             if(!dateString) return '-';
-            
-            // FIX TIMEZONE:
-            // Data dari database biasanya format "YYYY-MM-DD HH:mm:ss" (UTC).
-            // Kita ubah jadi ISO format dengan akhiran 'Z' (Zulu/UTC) -> "YYYY-MM-DDTHH:mm:ssZ"
-            // Ini memberi tahu browser: "Hei, ini jam UTC loh, tolong konversi ke jam lokal user (WITA/WIB) dong!"
+            // TIMEZONE FIX: Paksa format UTC 'Z' di akhir agar browser konversi ke lokal (WITA)
             const safeDateString = dateString.replace(' ', 'T') + 'Z';
             const date = new Date(safeDateString);
-
-            // Tampilkan dalam format Indonesia (24 Jam)
-            return date.toLocaleTimeString('id-ID', {
-                hour: '2-digit', 
-                minute:'2-digit',
-                hour12: false
-            });
+            return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute:'2-digit', hour12: false });
         }
 
-        // Jalankan
         updateData();
-        setInterval(updateData, 3000); // 3 detik sekali biar tidak boros baterai HP
-
+        setInterval(updateData, 3000);
     </script>
 </body>
 </html>
