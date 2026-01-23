@@ -138,6 +138,12 @@ class GpsServer extends Command
                 $connection->write("(" . $factoryId . "AZ00)");
                 $this->info("❤️ Heartbeat");
             }
+
+            // --- 4. HANDSHAKE (BP00) [BARU] ---
+            elseif ($cmd == 'BP00') {
+                $connection->write("(" . $factoryId . "AP00)");
+                $this->info("🤝 Handshake BP00 Dibalas");
+            }
         }
     }
 
