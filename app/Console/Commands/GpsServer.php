@@ -11,7 +11,7 @@ use Carbon\Carbon;
 class GpsServer extends Command
 {
     protected $signature = 'gps:server {port=5022}';
-    protected $description = 'Start TCP Server (Debug Mode)';
+    protected $description = 'Start TCP Server (Universal Protocol)';
 
     public function handle()
     {
@@ -20,32 +20,27 @@ class GpsServer extends Command
         
         $socket = new SocketServer("0.0.0.0:$port", [], $loop);
 
-        $this->info("🚀 DEBUG MODE: Server Berjalan di Port $port...");
+        $this->info("🚀 SERVER READY: Port $port");
 
         $socket->on('connection', function (ConnectionInterface $connection) {
             $this->info("⚡ Device masuk: " . $connection->getRemoteAddress());
             
             $connection->on('data', function ($data) use ($connection) {
-                // 1. Coba baca sebagai HEX (biasanya GT06)
                 $hex = bin2hex($data);
-                
-                // 2. Coba baca sebagai TEXT (biasanya protokol H02/Sinotrack)
                 $text = trim($data);
 
-                // TAMPILKAN SEMUANYA KE LAYAR BIAR KETAHUAN
-                $this->info("📦 RAW HEX  : " . $hex);
-                $this->info("📄 RAW TEXT : " . $text);
+                // DEBUG LOG
+                // $this->info("📦 RAW: " . $text); 
 
-                // Lanjut ke pemrosesan
                 $this->processPacket($connection, $hex, $text);
             });
 
             $connection->on('close', function () {
-                $this->info("❌ Device putus.");
+                // $this->info("❌ Device putus.");
             });
             
             $connection->on('error', function (\Exception $e) {
-                $this->error("Error: " . $e->getMessage());
+                // $this->error("Error: " . $e->getMessage());
             });
         });
 
@@ -54,72 +49,94 @@ class GpsServer extends Command
 
     private function processPacket($connection, $hexData, $textData)
     {
-        // SKENARIO 1: PROTOKOL GT06 (Header 7878 atau 7979)
-        if (substr($hexData, 0, 4) === '7878' || substr($hexData, 0, 4) === '7979') {
-            $protocol = substr($hexData, 6, 2);
+        // ==========================================================
+        // SKENARIO 1: PROTOKOL TEXT (YANG ALAT ANDA PAKAI)
+        // Format: (SerialID + CMD + DATA)
+        // Contoh: (028044735775BP05355228044735775...)
+        // ==========================================================
+        if (str_starts_with($textData, '(') && str_ends_with($textData, ')')) {
+            $content = substr($textData, 1, -1); // Hapus kurung ( )
             
-            // Login Packet
+            // Parsing Header
+            // 12 digit pertama biasanya ID Pabrik
+            $factoryId = substr($content, 0, 12);
+            // 4 digit berikutnya adalah Command (BP05, BZ00, BR00)
+            $cmd = substr($content, 12, 4);
+            // Sisanya adalah Data
+            $data = substr($content, 16);
+
+            $this->info("✅ TERDETEKSI PROTOKOL TEXT! ID: $factoryId CMD: $cmd");
+
+            // --- HANDLER 1: LOGIN (BP05) ---
+            if ($cmd == 'BP05') {
+                // 15 digit pertama di data adalah IMEI
+                $imei = substr($data, 0, 15);
+                $this->info("🔑 Login IMEI: $imei");
+                
+                $this->updateDeviceStatus($imei);
+                
+                // Wajib Reply: Ganti 'B' jadi 'A' -> (ID + AP05)
+                $reply = "(" . $factoryId . "AP05)";
+                $connection->write($reply);
+                $this->info("📤 Reply Login Terkirim");
+            }
+
+            // --- HANDLER 2: LOKASI GPS (BR00) ---
+            // Format: YYMMDDHHMMSS A LAT N LON E SPEED ...
+            elseif ($cmd == 'BR00') {
+                $this->info("📍 Data Lokasi Masuk!");
+                
+                // Parsing sederhana format BR00
+                // Data: 220520102030A2233.4444N11333.4444E000.1...
+                // (Implementasi regex parsing sederhana)
+                // Kita cari pola A/V (Valid/Void)
+                
+                // Reply dulu biar alat senang
+                $reply = "(" . $factoryId . "AR00)";
+                $connection->write($reply);
+
+                // TODO: Parsing koordinat BR00 nanti saat data masuk
+                // Untuk sekarang kita pastikan Login berhasil dulu
+            }
+
+            // --- HANDLER 3: HEARTBEAT/LBS (BZ00) ---
+            elseif ($cmd == 'BZ00') {
+                $reply = "(" . $factoryId . "AZ00)";
+                $connection->write($reply);
+                $this->info("❤️ Heartbeat Dibalas");
+            }
+        }
+
+        // ==========================================================
+        // SKENARIO 2: PROTOKOL GT06 (Untuk Jaga-jaga)
+        // ==========================================================
+        elseif (substr($hexData, 0, 4) === '7878') {
+            // (Kode GT06 yang lama tetap kita simpan biar universal)
+            $protocol = substr($hexData, 6, 2);
             if ($protocol == '01') {
-                $imei = substr($hexData, 8, 16); // Ambil IMEI
-                $serial = substr($hexData, -8, 4); 
-                
-                $this->info("✅ TERDETEKSI PROTOKOL GT06! IMEI: $imei");
-                
-                // Simpan Login
-                $this->updateDeviceStatus($imei);
-
-                // Reply Login (Wajib)
-                $response = hex2bin("78780501" . $serial . "D9DC0D0A"); 
-                $connection->write($response);
-            }
-            // Location Packet (0x12, 0x22, 0x16)
-            elseif (in_array($protocol, ['12', '22', '16'])) {
-                $this->info("📍 Data Lokasi GT06 masuk (Perlu parsing detail)");
-                // (Logika parsing detail ada di kode sebelumnya, disederhanakan untuk debug ini)
-            }
-            // Heartbeat (0x13)
-            elseif ($protocol == '13') {
+                $imei = substr($hexData, 8, 16);
                 $serial = substr($hexData, -8, 4);
-                $response = hex2bin("78780513" . $serial . "D9DC0D0A");
-                $connection->write($response);
-                $this->info("❤️ Heartbeat dibalas");
-            }
-        }
-
-        // SKENARIO 2: PROTOKOL H02 (Teks diawali *HQ)
-        // Contoh: *HQ,123456789012345,V1,....
-        elseif (str_starts_with($textData, '*HQ')) {
-            $parts = explode(',', $textData);
-            if (count($parts) > 2) {
-                $imei = $parts[1]; // IMEI biasanya ada di potongan kedua
-                $this->info("✅ TERDETEKSI PROTOKOL H02! IMEI: $imei");
+                $this->info("Login GT06: $imei");
                 $this->updateDeviceStatus($imei);
-                // H02 biasanya tidak butuh reply khusus, atau balas IMEI saja
+                $connection->write(hex2bin("78780501" . $serial . "D9DC0D0A"));
             }
-        }
-        
-        else {
-            $this->warn("⚠️ Protokol tidak dikenal. Cek Raw Hex di atas.");
         }
     }
 
     private function updateDeviceStatus($imei)
     {
-        // Masukkan ke DB biar muncul di Dashboard
-        // Gunakan try-catch biar gak error kalau DB belum siap
         try {
             DB::table('devices')->updateOrInsert(
                 ['imei' => $imei],
                 [
                     'last_online' => Carbon::now(),
                     'updated_at' => Carbon::now(),
-                    // Kalau belum ada nama, kasih nama default
                     'name' => DB::raw('COALESCE(name, "New Device '.$imei.'")') 
                 ]
             );
-            $this->info("💾 Status device disimpan ke Database.");
+            $this->info("💾 Device Disimpan: $imei");
         } catch (\Exception $e) {
-            $this->error("Gagal simpan ke DB: " . $e->getMessage());
+            $this->error("DB Error: " . $e->getMessage());
         }
     }
 }
