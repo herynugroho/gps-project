@@ -144,6 +144,12 @@ class GpsServer extends Command
                 $connection->write("(" . $factoryId . "AP00)");
                 $this->info("🤝 Handshake BP00 Dibalas");
             }
+
+            // --- 5. DEBUG MESSAGE (BP04 & LAINNYA) ---
+            else {
+                // Tampilkan isi pesan rahasia ini ke log
+                $this->warn("⚠️ PESAN MISTERIUS [$cmd]: " . $data);
+            }
         }
     }
 
