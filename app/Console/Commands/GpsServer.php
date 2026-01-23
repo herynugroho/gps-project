@@ -28,19 +28,15 @@ class GpsServer extends Command
             $connection->on('data', function ($data) use ($connection) {
                 $hex = bin2hex($data);
                 $text = trim($data);
-
-                // DEBUG LOG
-                // $this->info("📦 RAW: " . $text); 
-
                 $this->processPacket($connection, $hex, $text);
             });
 
             $connection->on('close', function () {
-                // $this->info("❌ Device putus.");
+                // Connection closed
             });
             
             $connection->on('error', function (\Exception $e) {
-                // $this->error("Error: " . $e->getMessage());
+                // Error handling
             });
         });
 
@@ -50,77 +46,114 @@ class GpsServer extends Command
     private function processPacket($connection, $hexData, $textData)
     {
         // ==========================================================
-        // SKENARIO 1: PROTOKOL TEXT (YANG ALAT ANDA PAKAI)
+        // PROTOKOL TEXT (365GPS/TOPIN)
         // Format: (SerialID + CMD + DATA)
-        // Contoh: (028044735775BP05355228044735775...)
         // ==========================================================
         if (str_starts_with($textData, '(') && str_ends_with($textData, ')')) {
-            $content = substr($textData, 1, -1); // Hapus kurung ( )
+            $content = substr($textData, 1, -1); // Hapus kurung
             
-            // Parsing Header
-            // 12 digit pertama biasanya ID Pabrik
             $factoryId = substr($content, 0, 12);
-            // 4 digit berikutnya adalah Command (BP05, BZ00, BR00)
             $cmd = substr($content, 12, 4);
-            // Sisanya adalah Data
             $data = substr($content, 16);
 
-            $this->info("✅ TERDETEKSI PROTOKOL TEXT! ID: $factoryId CMD: $cmd");
+            $this->info("✅ MSG: $cmd | ID: $factoryId");
 
-            // --- HANDLER 1: LOGIN (BP05) ---
+            // --- 1. LOGIN (BP05) ---
             if ($cmd == 'BP05') {
-                // 15 digit pertama di data adalah IMEI
                 $imei = substr($data, 0, 15);
                 $this->info("🔑 Login IMEI: $imei");
-                
                 $this->updateDeviceStatus($imei);
                 
-                // Wajib Reply: Ganti 'B' jadi 'A' -> (ID + AP05)
+                // Reply Login (AP05)
                 $reply = "(" . $factoryId . "AP05)";
                 $connection->write($reply);
-                $this->info("📤 Reply Login Terkirim");
             }
 
-            // --- HANDLER 2: LOKASI GPS (BR00) ---
-            // Format: YYMMDDHHMMSS A LAT N LON E SPEED ...
+            // --- 2. LOKASI (BR00) ---
+            // Contoh Data: 220101120000A2232.9806N11404.9355E000.1...
             elseif ($cmd == 'BR00') {
-                $this->info("📍 Data Lokasi Masuk!");
+                // Kita ambil IMEI dari session/factoryID (Simplifikasi: Pakai ID Pabrik atau cari di DB)
+                // Karena protokol ini tidak kirim IMEI di paket lokasi, kita harus cari IMEI based on FactoryID
+                // ATAU: Asumsi alat sudah Login sebelumnya, kita cari device yang last_online-nya barusan update.
                 
-                // Parsing sederhana format BR00
-                // Data: 220520102030A2233.4444N11333.4444E000.1...
-                // (Implementasi regex parsing sederhana)
-                // Kita cari pola A/V (Valid/Void)
-                
-                // Reply dulu biar alat senang
-                $reply = "(" . $factoryId . "AR00)";
-                $connection->write($reply);
+                // *Trik Cepat:* Kita parsing dulu, nanti simpan ke device yang cocok.
+                // Regex untuk memecah format: YYMMDDHHMMSS + Status + Lat + N/S + Lon + E/W + Speed
+                if (preg_match('/(\d{12})([AV])(\d+\.\d+)([NS])(\d+\.\d+)([EW])([\d\.]+)/', $data, $matches)) {
+                    
+                    $valid = $matches[2]; // A = Valid, V = Void (No GPS)
+                    $rawLat = $matches[3];
+                    $ns = $matches[4];
+                    $rawLng = $matches[5];
+                    $ew = $matches[6];
+                    $speedKnots = $matches[7];
 
-                // TODO: Parsing koordinat BR00 nanti saat data masuk
-                // Untuk sekarang kita pastikan Login berhasil dulu
+                    // Konversi Format NMEA (DDMM.MMMM) ke Decimal (DD.DDDD)
+                    $lat = $this->dmToDecimal($rawLat);
+                    $lng = $this->dmToDecimal($rawLng);
+
+                    // Koreksi Minus (South / West)
+                    if ($ns == 'S') $lat = $lat * -1;
+                    if ($ew == 'W') $lng = $lng * -1;
+
+                    // Speed Knots ke Km/h
+                    $speed = floatval($speedKnots) * 1.852;
+
+                    $this->info("📍 LOKASI: $lat, $lng | Speed: $speed km/h | Valid: $valid");
+
+                    if ($valid == 'A') {
+                        // Simpan ke DB. 
+                        // Masalah: Paket BR00 tidak bawa IMEI. 
+                        // Solusi: Kita pakai "Factory ID" ($factoryId) untuk mencari IMEI di log/db
+                        // atau update device terakhir yang login dengan IP yang sama (Sangat advanced).
+                        
+                        // CARA SEMENTARA: Kita update SEMUA device yang punya Factory ID ini di namanya
+                        // ATAU: Karena di dashboard Anda sudah input IMEI, kita anggap koneksi ini milik IMEI tersebut.
+                        
+                        // Cari device yang baru saja update (Login BP05)
+                        $device = DB::table('devices')->orderBy('updated_at', 'desc')->first();
+                        
+                        if ($device) {
+                            DB::table('positions')->insert([
+                                'imei' => $device->imei,
+                                'latitude' => $lat,
+                                'longitude' => $lng,
+                                'speed' => $speed,
+                                'course' => 0,
+                                'gps_time' => Carbon::now(),
+                                'created_at' => Carbon::now()
+                            ]);
+                            $this->info("💾 Posisi disimpan untuk IMEI: " . $device->imei);
+                        }
+                    } else {
+                        $this->warn("⚠️ GPS Void (Belum dapat satelit)");
+                    }
+
+                    // Reply Lokasi (AR00)
+                    $connection->write("(" . $factoryId . "AR00)");
+                }
             }
 
-            // --- HANDLER 3: HEARTBEAT/LBS (BZ00) ---
+            // --- 3. HEARTBEAT (BZ00) ---
             elseif ($cmd == 'BZ00') {
-                $reply = "(" . $factoryId . "AZ00)";
-                $connection->write($reply);
-                $this->info("❤️ Heartbeat Dibalas");
+                $connection->write("(" . $factoryId . "AZ00)");
+                $this->info("❤️ Heartbeat");
             }
         }
+    }
 
-        // ==========================================================
-        // SKENARIO 2: PROTOKOL GT06 (Untuk Jaga-jaga)
-        // ==========================================================
-        elseif (substr($hexData, 0, 4) === '7878') {
-            // (Kode GT06 yang lama tetap kita simpan biar universal)
-            $protocol = substr($hexData, 6, 2);
-            if ($protocol == '01') {
-                $imei = substr($hexData, 8, 16);
-                $serial = substr($hexData, -8, 4);
-                $this->info("Login GT06: $imei");
-                $this->updateDeviceStatus($imei);
-                $connection->write(hex2bin("78780501" . $serial . "D9DC0D0A"));
-            }
-        }
+    // Fungsi Konversi Koordinat GPS (DDMM.MMMM -> Decimal)
+    private function dmToDecimal($dm) {
+        // Lat: 2 digit pertama derajat. Lon: 3 digit pertama derajat.
+        // Kita ambil titik sebagai patokan.
+        $dotPos = strpos($dm, '.');
+        if ($dotPos === false) return 0;
+
+        // Menit adalah 2 digit sebelum titik + angka setelah titik
+        $minutes = substr($dm, $dotPos - 2);
+        // Derajat adalah sisanya di depan
+        $degrees = substr($dm, 0, $dotPos - 2);
+
+        return floatval($degrees) + (floatval($minutes) / 60);
     }
 
     private function updateDeviceStatus($imei)
@@ -131,12 +164,9 @@ class GpsServer extends Command
                 [
                     'last_online' => Carbon::now(),
                     'updated_at' => Carbon::now(),
-                    'name' => DB::raw('COALESCE(name, "New Device '.$imei.'")') 
+                    'name' => DB::raw('COALESCE(name, "Device '.$imei.'")') 
                 ]
             );
-            $this->info("💾 Device Disimpan: $imei");
-        } catch (\Exception $e) {
-            $this->error("DB Error: " . $e->getMessage());
-        }
+        } catch (\Exception $e) {}
     }
 }
