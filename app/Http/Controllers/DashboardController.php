@@ -71,13 +71,25 @@ class DashboardController extends Controller
         return view('history', compact('device'));
     }
 
-    public function getHistoryApi($imei)
+    public function getHistoryApi(Request $request, $imei)
     {
-        $history = DB::table('positions')
+        $range = $request->query('range', 'today'); // default hari ini
+        
+        $query = DB::table('positions')
             ->where('imei', $imei)
-            ->where('gps_time', '>=', Carbon::today())
-            ->orderBy('gps_time', 'asc')
-            ->get();
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude');
+
+        if ($range === 'week') {
+            $query->where('gps_time', '>=', Carbon::now()->startOfWeek());
+        } else {
+            // Default Today
+            $query->where('gps_time', '>=', Carbon::today());
+        }
+
+        // PENTING: Harus diurutkan ASC agar garis polyline tidak melompat-lompat
+        $history = $query->orderBy('gps_time', 'asc')->get();
+
         return response()->json($history);
     }
 }
