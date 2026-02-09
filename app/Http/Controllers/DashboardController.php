@@ -22,6 +22,7 @@ class DashboardController extends Controller
         return response()->json($devices);
     }
 
+    // Manajemen Armada
     public function listDevices() {
         $devices = DB::table('devices')->orderBy('created_at', 'desc')->paginate(10);
         return view('devices.index', compact('devices'));
@@ -40,11 +41,27 @@ class DashboardController extends Controller
             'created_at' => Carbon::now(),
             'updated_at' => Carbon::now(),
         ]);
-        return redirect()->route('devices.index')->with('success', 'Berhasil ditambah!');
+        return redirect()->route('devices.index')->with('success', 'Unit Berhasil Ditambah!');
     }
 
     public function destroy($id) {
         DB::table('devices')->where('id', $id)->delete();
-        return redirect()->route('devices.index')->with('success', 'Berhasil dihapus!');
+        return redirect()->route('devices.index')->with('success', 'Unit Berhasil Dihapus!');
+    }
+
+    // History Perjalanan
+    public function history($imei) {
+        $device = DB::table('devices')->where('imei', $imei)->first();
+        if (!$device) abort(404);
+        return view('history', compact('device'));
+    }
+
+    public function getHistoryApi($imei) {
+        $history = DB::table('positions')
+            ->where('imei', $imei)
+            ->where('gps_time', '>=', Carbon::today()) // Ambil data hari ini saja agar tidak berat
+            ->orderBy('gps_time', 'asc')
+            ->get();
+        return response()->json($history);
     }
 }
