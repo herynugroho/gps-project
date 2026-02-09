@@ -5,32 +5,20 @@ use App\Http\Controllers\DashboardController;
 
 /*
 |--------------------------------------------------------------------------
-| Web Routes
+| Web Routes - Versi Tanpa Auth (Akses Langsung)
 |--------------------------------------------------------------------------
-|
-| Di sini kita mendaftarkan semua rute untuk aplikasi GPS Tracker.
-|
 */
 
-// 1. Dashboard Utama (Peta Besar)
-Route::get('/', [DashboardController::class, 'index']);
-
-// 2. API Data Real-time (Digunakan oleh Dashboard Utama)
+// Dashboard Utama (Peta)
+Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 Route::get('/api/gps-data', [DashboardController::class, 'getApiData']);
 
-// --- RUTE BARU UNTUK FITUR HISTORY ---
-
-// 3. Halaman Detail History (UI)
-// Contoh URL: /device/1234567890/history
-Route::get('/device/{imei}/history', [DashboardController::class, 'history']);
-
-// 4. API Data History (Digunakan oleh Halaman History untuk gambar garis)
-// Contoh URL: /api/history/1234567890
-Route::get('/api/history/{imei}', [DashboardController::class, 'getHistoryApi']);
-
-// --- MANAJEMEN PERANGKAT (BARU) ---
-// 5. Halaman Form Tambah Device
+// Manajemen Kendaraan (Public Access)
+Route::get('/devices', [DashboardController::class, 'listDevices'])->name('devices.index');
 Route::get('/devices/create', [DashboardController::class, 'create'])->name('devices.create');
-
-// 6. Proses Simpan Data ke Database
 Route::post('/devices', [DashboardController::class, 'store'])->name('devices.store');
+Route::delete('/devices/{id}', [DashboardController::class, 'destroy'])->name('devices.destroy');
+
+// History Perjalanan
+Route::get('/device/{imei}/history', [DashboardController::class, 'history'])->name('devices.history');
+Route::get('/api/history/{imei}', [DashboardController::class, 'getHistoryApi']);
