@@ -8,32 +8,44 @@ use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
-    public function index() {
+    public function index()
+    {
         return view('dashboard');
     }
 
-    public function getApiData() {
+    public function getApiData()
+    {
         $devices = DB::table('devices')
-            ->select('devices.*', 'positions.latitude', 'positions.longitude', 'positions.speed', 'positions.gps_time')
+            ->select('devices.*', 'positions.latitude', 'positions.longitude', 'positions.speed', 'positions.course', 'positions.gps_time')
             ->leftJoin('positions', function ($join) {
                 $join->on('devices.imei', '=', 'positions.imei')
                      ->whereRaw('positions.id IN (select MAX(id) from positions group by imei)');
-            })->get();
+            })
+            ->get();
+
         return response()->json($devices);
     }
 
-    // Manajemen Armada
-    public function listDevices() {
+    // Manajemen Kendaraan
+    public function listDevices()
+    {
         $devices = DB::table('devices')->orderBy('created_at', 'desc')->paginate(10);
         return view('devices.index', compact('devices'));
     }
 
-    public function create() {
+    public function create()
+    {
         return view('devices.create');
     }
 
-    public function store(Request $request) {
-        $request->validate(['imei' => 'required|numeric', 'name' => 'required', 'plate_number' => 'required']);
+    public function store(Request $request)
+    {
+        $request->validate([
+            'imei' => 'required|numeric|unique:devices,imei',
+            'name' => 'required|string',
+            'plate_number' => 'required|string',
+        ]);
+
         DB::table('devices')->insert([
             'imei' => $request->imei,
             'name' => $request->name,
@@ -41,25 +53,29 @@ class DashboardController extends Controller
             'created_at' => Carbon::now(),
             'updated_at' => Carbon::now(),
         ]);
-        return redirect()->route('devices.index')->with('success', 'Unit Berhasil Ditambah!');
+
+        return redirect()->route('devices.index')->with('success', 'Kendaraan berhasil ditambahkan!');
     }
 
-    public function destroy($id) {
+    public function destroy($id)
+    {
         DB::table('devices')->where('id', $id)->delete();
-        return redirect()->route('devices.index')->with('success', 'Unit Berhasil Dihapus!');
+        return redirect()->route('devices.index')->with('success', 'Kendaraan berhasil dihapus.');
     }
 
     // History Perjalanan
-    public function history($imei) {
+    public function history($imei)
+    {
         $device = DB::table('devices')->where('imei', $imei)->first();
         if (!$device) abort(404);
         return view('history', compact('device'));
     }
 
-    public function getHistoryApi($imei) {
+    public function getHistoryApi($imei)
+    {
         $history = DB::table('positions')
             ->where('imei', $imei)
-            ->where('gps_time', '>=', Carbon::today()) // Ambil data hari ini saja agar tidak berat
+            ->where('gps_time', '>=', Carbon::today())
             ->orderBy('gps_time', 'asc')
             ->get();
         return response()->json($history);

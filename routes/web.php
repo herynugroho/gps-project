@@ -5,7 +5,7 @@ use App\Http\Controllers\DashboardController;
 
 /*
 |--------------------------------------------------------------------------
-| Web Routes - Versi Stabil & Lengkap
+| Web Routes - Versi Tanpa Auth (Akses Langsung)
 |--------------------------------------------------------------------------
 */
 
@@ -13,7 +13,7 @@ use App\Http\Controllers\DashboardController;
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 Route::get('/api/gps-data', [DashboardController::class, 'getApiData']);
 
-// Manajemen Armada (Halaman Kelola Semua Armada)
+// Manajemen Armada (Public)
 Route::get('/devices', [DashboardController::class, 'listDevices'])->name('devices.index');
 Route::get('/devices/create', [DashboardController::class, 'create'])->name('devices.create');
 Route::post('/devices', [DashboardController::class, 'store'])->name('devices.store');
