@@ -73,22 +73,33 @@ class DashboardController extends Controller
 
     public function getHistoryApi(Request $request, $imei)
     {
-        $range = $request->query('range', 'today'); // default hari ini
-        
+        $range = $request->query('range', 'today');
+
+        // 1. Cari Factory ID dari device ini dulu
+        $device = DB::table('devices')->where('imei', $imei)->first();
+        if (!$device || !$device->factory_id) {
+            return response()->json([]);
+        }
+
+        // 2. Tarik posisi berdasarkan factory_id (lebih akurat daripada IMEI jika ada data lama yang nyampur)
+        // Kita join dengan tabel devices untuk memastikan kita hanya ambil data milik alat ini
         $query = DB::table('positions')
-            ->where('imei', $imei)
+            ->join('devices', 'positions.imei', '=', 'devices.imei')
+            ->where('devices.factory_id', $device->factory_id)
             ->whereNotNull('latitude')
             ->whereNotNull('longitude');
 
+        // 3. Filter Waktu
         if ($range === 'week') {
-            $query->where('gps_time', '>=', Carbon::now()->startOfWeek());
+            $query->where('positions.gps_time', '>=', Carbon::now()->startOfWeek());
         } else {
-            // Default Today
-            $query->where('gps_time', '>=', Carbon::today());
+            $query->where('positions.gps_time', '>=', Carbon::today());
         }
 
-        // PENTING: Harus diurutkan ASC agar garis polyline tidak melompat-lompat
-        $history = $query->orderBy('gps_time', 'asc')->get();
+        // 4. PENTING: Urutkan berdasarkan waktu terkecil ke terbesar
+        $history = $query->orderBy('positions.gps_time', 'asc')
+                         ->select('positions.*')
+                         ->get();
 
         return response()->json($history);
     }
