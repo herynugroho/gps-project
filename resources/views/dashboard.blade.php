@@ -14,7 +14,6 @@
         body { font-family: 'Inter', sans-serif; }
         #map { height: 100%; width: 100%; z-index: 0; }
         
-        /* Gaya Label Nama Kendaraan di Atas Marker */
         .marker-label {
             background: white;
             border: 2px solid #1e293b;
@@ -48,7 +47,6 @@
 </head>
 <body class="bg-gray-100 h-screen flex overflow-hidden relative">
 
-    <!-- MOBILE OVERLAY -->
     <div id="mobile-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black bg-opacity-50 z-30 hidden md:hidden transition-opacity"></div>
 
     <!-- SIDEBAR -->
@@ -81,7 +79,6 @@
         </div>
 
         <div class="flex-1 overflow-y-auto no-scrollbar px-2 py-3 space-y-2" id="vehicle-list">
-            <!-- Loading State -->
             <div class="p-10 text-center text-gray-400 text-sm">
                 <i class="fa-solid fa-circle-notch fa-spin text-blue-500 text-2xl mb-2"></i> 
             </div>
@@ -97,21 +94,16 @@
     <!-- MAIN CONTENT -->
     <main class="flex-1 flex flex-col relative w-full h-full">
         
-        <!-- MOBILE HEADER -->
         <div class="absolute top-4 left-4 z-10 md:hidden flex items-center gap-2">
             <button onclick="toggleSidebar()" class="bg-white text-slate-900 p-2.5 rounded-lg shadow-lg active:scale-95 transition border border-gray-200">
                 <i class="fa-solid fa-bars text-lg"></i>
             </button>
         </div>
 
-        <!-- PETA -->
         <div id="map" class="w-full h-full bg-gray-200"></div>
 
-        <!-- DETAIL PANEL (BOTTOM SHEET) -->
         <div id="detail-panel" class="absolute bottom-0 left-0 right-0 md:left-auto md:right-6 md:bottom-6 md:w-80 md:rounded-2xl rounded-t-2xl bg-white shadow-2xl z-20 p-5 transform translate-y-[120%] transition-transform duration-300 border-t border-gray-200 md:border md:border-gray-100 pb-12 md:pb-5">
-            
             <div class="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-4 md:hidden"></div>
-
             <button onclick="closeDetail()" class="absolute top-4 right-4 text-gray-300 hover:text-red-500"><i class="fa-solid fa-circle-xmark text-2xl"></i></button>
             
             <div class="flex items-center gap-4 mb-5">
@@ -188,7 +180,6 @@
                 const lng = parseFloat(unit.longitude);
                 const isMoving = unit.speed > 0;
                 
-                // --- INI ADALAH LOGIKA LABEL NAMA ---
                 const iconHtml = `
                     <div class="flex flex-col items-center">
                         <div class="marker-label">
@@ -225,7 +216,6 @@
             let html = '';
             
             data.forEach(unit => {
-                const isOnline = unit.latitude != null;
                 const isMoving = unit.speed > 0;
                 const activeClass = selectedImei == unit.imei ? 'border-blue-500 bg-blue-50' : 'border-transparent bg-white hover:border-slate-200';
 
@@ -243,7 +233,7 @@
                         </div>
                         <div class="text-right">
                             <span class="text-[10px] font-bold px-2 py-1 rounded-full ${isMoving ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'}">
-                                ${isMoving ? unit.speed + ' km/h' : 'PARKIR'}
+                                ${isMoving ? Math.round(unit.speed) + ' km/h' : 'PARKIR'}
                             </span>
                         </div>
                     </div>
@@ -260,9 +250,8 @@
 
         function focusUnit(imei, lat, lng) {
             selectedImei = imei;
-            if (window.innerWidth < 768) toggleSidebar();
+            if (window.innerWidth < 768) sidebar.classList.add('-translate-x-full');
             if (lat && lng) map.flyTo([lat, lng], 17);
-            const unit = markers[imei] ? {imei} : null; // Logic detail akan dihandle updateData
             openDetail();
         }
 
