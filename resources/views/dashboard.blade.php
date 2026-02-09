@@ -3,78 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Prima GPS - Dashboard Monitoring</title>
-    
+    <title>PRIMA GPS - Makassar</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-
     <style>
         body { font-family: 'Inter', sans-serif; }
-        #map { height: 100%; width: 100%; z-index: 0; }
+        #map { height: 100vh; width: 100%; z-index: 0; }
         .marker-label {
-            background: white;
-            border: 2px solid #1e293b;
-            border-radius: 4px;
-            padding: 2px 6px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            white-space: nowrap;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            bottom: 20px;
-            position: relative;
+            background: white; border: 2px solid #0f172a; border-radius: 6px;
+            padding: 2px 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            white-space: nowrap; font-weight: bold; font-size: 11px;
+            position: relative; bottom: 25px; color: #0f172a;
         }
-        .pulse-ring {
-            border: 3px solid #10B981;
-            border-radius: 30px;
-            height: 18px; width: 18px;
-            position: absolute; left: -9px; top: -9px;
-            animation: pulsate 1s ease-out infinite;
-            opacity: 0.0;
+        .marker-pin {
+            width: 14px; height: 14px; border-radius: 50%;
+            border: 3px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.3);
         }
-        @keyframes pulsate {
-            0% {transform: scale(0.1, 0.1); opacity: 0.0;}
-            50% {opacity: 1.0;}
-            100% {transform: scale(1.2, 1.2); opacity: 0.0;}
-        }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .bg-moving { background-color: #22c55e; box-shadow: 0 0 10px #22c55e; }
+        .bg-stop { background-color: #ef4444; }
     </style>
 </head>
-<body class="bg-gray-100 h-screen flex overflow-hidden relative">
+<body class="bg-slate-100 flex h-screen overflow-hidden">
 
-    <!-- SIDEBAR -->
-    <aside id="sidebar" class="fixed inset-y-0 left-0 w-80 bg-white shadow-2xl z-40 transform -translate-x-full md:translate-x-0 md:relative md:shadow-xl transition-transform duration-300 ease-in-out flex flex-col h-full">
-        <div class="p-5 border-b border-gray-100 bg-slate-900 text-white flex items-center justify-between shrink-0">
-            <div class="flex items-center gap-3">
-                <div class="w-8 h-8 bg-blue-500 rounded flex items-center justify-center font-bold">P</div>
-                <div>
-                    <h1 class="font-bold tracking-wide uppercase">Prima GPS</h1>
-                    <p class="text-[10px] text-blue-200">Fleet Management</p>
-                </div>
+    <!-- Sidebar -->
+    <aside class="w-80 bg-white border-r border-slate-200 flex flex-col z-10 shadow-xl">
+        <div class="p-6 bg-slate-900 text-white flex items-center gap-3">
+            <div class="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-xl">P</div>
+            <div>
+                <h1 class="font-bold uppercase tracking-wider">PRIMA GPS</h1>
+                <p class="text-[10px] text-blue-300">Live Tracking System</p>
             </div>
         </div>
 
-        <div class="flex-1 overflow-y-auto no-scrollbar px-2 py-3 space-y-2" id="vehicle-list">
-            <!-- List unit akan muncul di sini via JS -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-3" id="unit-list">
+            <p class="text-center text-slate-400 text-sm py-10">Mencari armada...</p>
         </div>
-        
-        <div class="p-4 border-t">
-            <a href="{{ route('devices.index') }}" class="w-full flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-xl font-bold text-sm transition">
-                <i class="fa-solid fa-gears"></i> Kelola Armada
+
+        <div class="p-4 border-t bg-slate-50">
+            <a href="{{ route('devices.index') }}" class="flex items-center justify-center gap-2 bg-white border border-slate-200 py-3 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-100 transition">
+                <i class="fa-solid fa-list-check"></i> Kelola Armada
             </a>
         </div>
     </aside>
 
-    <!-- MAIN CONTENT -->
+    <!-- Main Map -->
     <main class="flex-1 relative">
         <div id="map"></div>
     </main>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        var map = L.map('map', { zoomControl: false }).setView([-5.147665, 119.432731], 13);
+        var map = L.map('map', { zoomControl: false }).setView([-5.147, 119.432], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
         var markers = {};
@@ -83,20 +63,51 @@
             fetch('/api/gps-data')
                 .then(res => res.json())
                 .then(data => {
+                    let listHtml = '';
                     data.forEach(unit => {
                         if (!unit.latitude || !unit.longitude) return;
+                        
                         const lat = parseFloat(unit.latitude);
                         const lng = parseFloat(unit.longitude);
-                        
-                        const iconHtml = `<div class="marker-label"><b>${unit.name}</b></div>`;
-                        const customIcon = L.divIcon({ html: iconHtml, className: 'custom-pin' });
+                        const isMoving = unit.speed > 0.1;
+                        const statusColor = isMoving ? 'bg-moving' : 'bg-stop';
+
+                        // Update Sidebar List
+                        listHtml += `
+                            <div class="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm hover:border-blue-300 transition cursor-pointer">
+                                <div class="flex justify-between items-start mb-1">
+                                    <h4 class="font-bold text-slate-800 uppercase text-sm">${unit.name}</h4>
+                                    <span class="text-[9px] font-bold px-2 py-0.5 rounded-full ${isMoving ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}">
+                                        ${isMoving ? Math.round(unit.speed) + ' KM/H' : 'BERHENTI'}
+                                    </span>
+                                </div>
+                                <p class="text-[10px] text-slate-400 font-mono">${unit.plate_number}</p>
+                            </div>
+                        `;
+
+                        // Update Map Marker with Label
+                        const iconHtml = `
+                            <div class="flex flex-col items-center">
+                                <div class="marker-label">${unit.name}</div>
+                                <div class="marker-pin ${statusColor}"></div>
+                            </div>
+                        `;
+
+                        const customIcon = L.divIcon({
+                            className: 'custom-div-icon',
+                            html: iconHtml,
+                            iconSize: [100, 40],
+                            iconAnchor: [50, 40]
+                        });
 
                         if (markers[unit.imei]) {
                             markers[unit.imei].setLatLng([lat, lng]);
+                            markers[unit.imei].setIcon(customIcon);
                         } else {
                             markers[unit.imei] = L.marker([lat, lng], {icon: customIcon}).addTo(map);
                         }
                     });
+                    document.getElementById('unit-list').innerHTML = listHtml;
                 });
         }
 

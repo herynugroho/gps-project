@@ -8,37 +8,31 @@ use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
-    public function index()
-    {
+    public function index() {
         return view('dashboard');
     }
 
-    public function getApiData()
-    {
-        return response()->json(
-            DB::table('devices')
+    public function getApiData() {
+        $devices = DB::table('devices')
             ->select('devices.*', 'positions.latitude', 'positions.longitude', 'positions.speed', 'positions.gps_time')
             ->leftJoin('positions', function ($join) {
                 $join->on('devices.imei', '=', 'positions.imei')
                      ->whereRaw('positions.id IN (select MAX(id) from positions group by imei)');
-            })->get()
-        );
+            })->get();
+        return response()->json($devices);
     }
 
-    public function listDevices()
-    {
+    public function listDevices() {
         $devices = DB::table('devices')->orderBy('created_at', 'desc')->paginate(10);
         return view('devices.index', compact('devices'));
     }
 
-    public function create()
-    {
+    public function create() {
         return view('devices.create');
     }
 
-    public function store(Request $request)
-    {
-        $request->validate(['imei' => 'required', 'name' => 'required', 'plate_number' => 'required']);
+    public function store(Request $request) {
+        $request->validate(['imei' => 'required|numeric', 'name' => 'required', 'plate_number' => 'required']);
         DB::table('devices')->insert([
             'imei' => $request->imei,
             'name' => $request->name,
@@ -46,12 +40,11 @@ class DashboardController extends Controller
             'created_at' => Carbon::now(),
             'updated_at' => Carbon::now(),
         ]);
-        return redirect()->route('devices.index');
+        return redirect()->route('devices.index')->with('success', 'Berhasil ditambah!');
     }
 
-    public function destroy($id)
-    {
+    public function destroy($id) {
         DB::table('devices')->where('id', $id)->delete();
-        return redirect()->route('devices.index');
+        return redirect()->route('devices.index')->with('success', 'Berhasil dihapus!');
     }
 }
