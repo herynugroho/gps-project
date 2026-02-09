@@ -85,7 +85,7 @@ class GpsServer extends Command
                         if ($ew == 'W') $lng = $lng * -1;
 
                         // Simpan ke Database (Cari device yang baru aktif)
-                        $device = DB::table('devices')->orderBy('updated_at', 'desc')->first();
+                        $device = DB::table('devices')->where('factory_id', $factoryId)->first();
                         
                         if ($device) {
                             DB::table('positions')->insert([
