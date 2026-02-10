@@ -14,6 +14,19 @@
         body { font-family: 'Inter', sans-serif; }
         #map { flex: 1; z-index: 0; }
         .btn-filter.active { background-color: #3b82f6; color: white; border-color: #3b82f6; }
+        
+        /* Style untuk Marker Parkir */
+        .parking-marker {
+            background: #f59e0b;
+            color: white;
+            border: 2px solid white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
     </style>
 </head>
 <body class="bg-slate-50 h-screen flex flex-col overflow-hidden">
@@ -45,14 +58,19 @@
     <!-- Map Area -->
     <div id="map"></div>
 
-    <!-- Stats Floating Card -->
+    <!-- Stats Floating Card: 3 Kolom -->
     <div class="bg-white border-t border-slate-100 p-4 flex justify-around items-center shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] z-10">
-        <div class="text-center">
-            <p class="text-[9px] text-slate-400 font-black uppercase mb-1">Total Data</p>
+        <div class="text-center flex-1">
+            <p class="text-[9px] text-slate-400 font-black uppercase mb-1">Titik Sinyal</p>
             <p class="font-black text-slate-800 text-lg" id="stat-points">0</p>
         </div>
         <div class="w-[1px] h-8 bg-slate-100"></div>
-        <div class="text-center">
+        <div class="text-center flex-1">
+            <p class="text-[9px] text-slate-400 font-black uppercase mb-1">Total Parkir</p>
+            <p class="font-black text-amber-500 text-lg" id="stat-parking">0</p>
+        </div>
+        <div class="w-[1px] h-8 bg-slate-100"></div>
+        <div class="text-center flex-1">
             <p class="text-[9px] text-slate-400 font-black uppercase mb-1">Est. Jarak</p>
             <p class="font-black text-slate-800 text-lg"><span id="stat-dist">0</span> <small class="text-[10px] font-normal italic">km</small></p>
         </div>
@@ -83,13 +101,43 @@
                 .then(data => {
                     if (data.length === 0) {
                         alert('Tidak ada riwayat untuk periode ini.');
+                        document.getElementById('stat-points').innerText = '0';
+                        document.getElementById('stat-dist').innerText = '0';
+                        document.getElementById('stat-parking').innerText = '0';
                         return;
                     }
 
-                    var latlngs = data.map(p => [parseFloat(p.latitude), parseFloat(p.longitude)]);
+                    // --- LOGIC FILTERING DATA ---
+                    let filteredPoints = [];
+                    let parkingEvents = [];
+                    let lastPoint = null;
+                    let stayCount = 0;
 
-                    // Gambar Garis Perjalanan
-                    pathLine = L.polyline(latlngs, {
+                    data.forEach((p, index) => {
+                        const currentLat = parseFloat(p.latitude).toFixed(5);
+                        const currentLng = parseFloat(p.longitude).toFixed(5);
+
+                        if (lastPoint && lastPoint.lat === currentLat && lastPoint.lng === currentLng) {
+                            // Jika titik sama, hitung sebagai durasi parkir
+                            stayCount++;
+                        } else {
+                            // Jika kendaraan mulai bergerak lagi setelah diam lama (>15 data/sekitar 5 menit)
+                            if (stayCount > 15 && lastPoint) {
+                                parkingEvents.push({
+                                    lat: lastPoint.lat,
+                                    lng: lastPoint.lng,
+                                    time: lastPoint.time
+                                });
+                            }
+                            
+                            filteredPoints.push([parseFloat(p.latitude), parseFloat(p.longitude)]);
+                            lastPoint = { lat: currentLat, lng: currentLng, time: p.gps_time };
+                            stayCount = 0;
+                        }
+                    });
+
+                    // Gambar Garis Perjalanan (Gunakan filteredPoints agar tidak berat)
+                    pathLine = L.polyline(filteredPoints, {
                         color: '#3b82f6',
                         weight: 6,
                         opacity: 0.8,
@@ -98,23 +146,37 @@
                     }).addTo(map);
 
                     // Marker Awal (Start)
-                    var startIcon = L.circleMarker(latlngs[0], {
-                        radius: 7, fillColor: "#22c55e", color: "#fff", weight: 3, opacity: 1, fillOpacity: 1
-                    }).addTo(map).bindPopup("Titik Awal");
+                    var startIcon = L.circleMarker(filteredPoints[0], {
+                        radius: 8, fillColor: "#22c55e", color: "#fff", weight: 3, opacity: 1, fillOpacity: 1
+                    }).addTo(map).bindPopup("<b>Titik Awal Perjalanan</b>");
                     markers.push(startIcon);
 
                     // Marker Akhir (Finish)
-                    var endIcon = L.circleMarker(latlngs[latlngs.length - 1], {
-                        radius: 7, fillColor: "#ef4444", color: "#fff", weight: 3, opacity: 1, fillOpacity: 1
-                    }).addTo(map).bindPopup("Posisi Terakhir");
+                    var endIcon = L.circleMarker(filteredPoints[filteredPoints.length - 1], {
+                        radius: 8, fillColor: "#ef4444", color: "#fff", weight: 3, opacity: 1, fillOpacity: 1
+                    }).addTo(map).bindPopup("<b>Posisi Terakhir</b>");
                     markers.push(endIcon);
 
-                    // Fit Map
+                    // Tambahkan Ikon Parkir (P) di peta
+                    parkingEvents.forEach(evt => {
+                        let pMarker = L.marker([evt.lat, evt.lng], {
+                            icon: L.divIcon({
+                                className: 'parking-marker',
+                                html: '<i class="fa-solid fa-p"></i>',
+                                iconSize: [24, 24],
+                                iconAnchor: [12, 12]
+                            })
+                        }).addTo(map).bindPopup(`<b>Area Parkir</b><br>Waktu: ${new Date(evt.time).toLocaleTimeString('id-ID')}`);
+                        markers.push(pMarker);
+                    });
+
+                    // Zoom ke jalur
                     map.fitBounds(pathLine.getBounds(), { padding: [50, 50] });
 
-                    // Update Stats
-                    document.getElementById('stat-points').innerText = data.length;
-                    document.getElementById('stat-dist').innerText = (calculateDistance(latlngs)).toFixed(2);
+                    // Update Statistik
+                    document.getElementById('stat-points').innerText = data.length; // Raw data tetap ditampilkan
+                    document.getElementById('stat-parking').innerText = parkingEvents.length;
+                    document.getElementById('stat-dist').innerText = (calculateDistance(filteredPoints)).toFixed(2);
                 });
         }
 
@@ -126,7 +188,6 @@
             return total / 1000;
         }
 
-        // Jalankan saat pertama load
         loadHistory('today');
     </script>
 </body>

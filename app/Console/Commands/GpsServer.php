@@ -11,36 +11,20 @@ use Carbon\Carbon;
 class GpsServer extends Command
 {
     protected $signature = 'gps:server {port=5022}';
-    protected $description = 'Start TCP Server (Production)';
+    protected $description = 'Start TCP Server with Data Filtering';
 
     public function handle()
     {
         $port = $this->argument('port');
         $loop = \React\EventLoop\Factory::create();
-        
-        // Matikan logging ReactPHP yang berlebihan
         $socket = new SocketServer("0.0.0.0:$port", [], $loop);
 
-        $this->info("🚀 GPS SERVER PRODUCTION STARTED ON PORT $port");
+        $this->info("🚀 GPS SERVER OPTIMIZED STARTED ON PORT $port");
 
         $socket->on('connection', function (ConnectionInterface $connection) {
-            // Log IP Address (Berguna untuk security audit)
-            $this->info("[" . Carbon::now()->toTimeString() . "] ⚡ New Connection: " . $connection->getRemoteAddress());
-            
             $connection->on('data', function ($data) use ($connection) {
-                // Proses data tanpa output berlebihan
-                $hex = bin2hex($data);
                 $text = trim($data);
-                $this->processPacket($connection, $hex, $text);
-            });
-
-            $connection->on('close', function () use ($connection) {
-                // Optional: Log disconnect
-                // $this->info("❌ Disconnected: " . $connection->getRemoteAddress());
-            });
-            
-            $connection->on('error', function (\Exception $e) {
-                $this->error("Error: " . $e->getMessage());
+                $this->processPacket($connection, bin2hex($data), $text);
             });
         });
 
@@ -49,10 +33,6 @@ class GpsServer extends Command
 
     private function processPacket($connection, $hexData, $textData)
     {
-        // ==========================================================
-        // PROTOKOL TEXT (365GPS/TOPIN - GT02A Clone)
-        // Format: (SerialID + CMD + DATA)
-        // ==========================================================
         if (str_starts_with($textData, '(') && str_ends_with($textData, ')')) {
             $content = substr($textData, 1, -1);
             $factoryId = substr($content, 0, 12);
@@ -62,6 +42,7 @@ class GpsServer extends Command
             // --- 1. LOGIN (BP05) ---
             if ($cmd == 'BP05') {
                 $imei = substr($data, 0, 15);
+                DB::table('devices')->where('imei', $imei)->update(['factory_id' => $factoryId]);
                 $this->updateDeviceStatus($imei);
                 $connection->write("(" . $factoryId . "AP05)");
                 $this->info("🔑 Login: $imei");
@@ -69,62 +50,68 @@ class GpsServer extends Command
 
             // --- 2. LOKASI (BR00 / BP04) ---
             elseif ($cmd == 'BR00' || $cmd == 'BP04') {
-                // Regex Universal: Waktu + A/V + Lat + N/S + Lon + E/W + Speed
                 if (preg_match('/([AV])(\d+\.\d+)([NS])(\d+\.\d+)([EW])([\d\.]+)/', $data, $matches)) {
-                    
                     $valid = $matches[1];
-                    
                     if ($valid == 'A') {
                         $lat = $this->dmToDecimal($matches[2]);
                         $ns = $matches[3];
                         $lng = $this->dmToDecimal($matches[4]);
                         $ew = $matches[5];
-                        $speed = floatval($matches[6]) * 1.852; // Knots to Km/h
+                        $speed = floatval($matches[6]) * 1.852;
 
                         if ($ns == 'S') $lat = $lat * -1;
                         if ($ew == 'W') $lng = $lng * -1;
 
-                        // Simpan ke Database (Cari device yang baru aktif)
                         $device = DB::table('devices')->where('factory_id', $factoryId)->first();
                         
                         if ($device) {
-                            DB::table('positions')->insert([
-                                'imei' => $device->imei,
-                                'latitude' => $lat,
-                                'longitude' => $lng,
-                                'speed' => $speed,
-                                'course' => 0, // Protocol ini jarang kirim course akurat
-                                'gps_time' => Carbon::now(),
-                                'created_at' => Carbon::now()
-                            ]);
-                            
-                            // Update last_online
+                            // --- LOGIKA FILTER DATA DUPLIKAT ---
+                            $lastPos = DB::table('positions')
+                                ->where('imei', $device->imei)
+                                ->orderBy('id', 'desc')
+                                ->first();
+
+                            // Kita beri toleransi sedikit (sekitar 5-10 meter) untuk getaran GPS
+                            $isSameLocation = false;
+                            if ($lastPos) {
+                                $latDiff = abs($lastPos->latitude - $lat);
+                                $lngDiff = abs($lastPos->longitude - $lng);
+                                // 0.0001 itu kira-kira 10 meter. Jika dibawah itu, anggap diam.
+                                if ($latDiff < 0.00005 && $lngDiff < 0.00005 && $speed < 1) {
+                                    $isSameLocation = true;
+                                }
+                            }
+
+                            if (!$isSameLocation) {
+                                // Hanya simpan jika posisi berubah atau sedang bergerak
+                                DB::table('positions')->insert([
+                                    'imei' => $device->imei,
+                                    'latitude' => $lat,
+                                    'longitude' => $lng,
+                                    'speed' => $speed,
+                                    'gps_time' => Carbon::now(),
+                                    'created_at' => Carbon::now()
+                                ]);
+                                $this->info("📍 [SIMPAN] $device->name pindah ke $lat, $lng");
+                            } else {
+                                // Jika diam, kita tidak simpan ke table positions, tapi...
+                                // Kita beri info di console agar kita tahu alat tetap konek
+                                $this->info("💤 [DIAM] $device->name tidak berpindah posisi.");
+                            }
+
+                            // SELALU update last_online di table devices agar di peta tetap "LIVE"
                             DB::table('devices')->where('imei', $device->imei)->update([
                                 'last_online' => Carbon::now(),
                                 'updated_at' => Carbon::now()
                             ]);
-                            
-                            $this->info("📍 Saved: $lat, $lng ($speed km/h) -> " . $device->imei);
                         }
-                    } 
-                    // Kita tidak perlu log data "Void/V" agar log bersih
-                    
-                    // Reply Wajib
+                    }
                     if ($cmd == 'BR00') $connection->write("(" . $factoryId . "AR00)");
                     if ($cmd == 'BP04') $connection->write("(" . $factoryId . "AP04)");
                 }
             }
-
-            // --- 3. HEARTBEAT (BZ00) ---
-            elseif ($cmd == 'BZ00') {
-                $connection->write("(" . $factoryId . "AZ00)");
-                // Heartbeat tidak perlu dicatat di log agar tidak spam
-            }
-
-            // --- 4. HANDSHAKE (BP00) ---
-            elseif ($cmd == 'BP00') {
-                $connection->write("(" . $factoryId . "AP00)");
-            }
+            elseif ($cmd == 'BZ00') $connection->write("(" . $factoryId . "AZ00)");
+            elseif ($cmd == 'BP00') $connection->write("(" . $factoryId . "AP00)");
         }
     }
 
@@ -137,11 +124,9 @@ class GpsServer extends Command
     }
 
     private function updateDeviceStatus($imei) {
-        try {
-            DB::table('devices')->updateOrInsert(
-                ['imei' => $imei],
-                ['last_online' => Carbon::now(), 'updated_at' => Carbon::now()]
-            );
-        } catch (\Exception $e) {}
+        DB::table('devices')->where('imei', $imei)->update([
+            'last_online' => Carbon::now(), 
+            'updated_at' => Carbon::now()
+        ]);
     }
 }
