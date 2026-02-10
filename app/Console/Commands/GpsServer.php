@@ -59,12 +59,15 @@ class GpsServer extends Command
                             
                             $shouldInsert = true;
                             if ($lastPos) {
-                                // Hitung jarak sederhana dalam meter (Haversine approximation)
                                 $dist = $this->calculateDistance($lastPos->latitude, $lastPos->longitude, $lat, $lng);
+                                $timeSinceLastSaved = Carbon::now()->diffInMinutes(Carbon::parse($lastPos->gps_time));
+
+                                $shouldInsert = true;
                                 
-                                // JANGAN SIMPAN jika:
-                                // 1. Jarak perpindahan < 20 meter DAN speed < 3 km/h
-                                if ($dist < 20 && $speed < 3) {
+                                // JANGAN SIMPAN JIKA:
+                                // 1. Jarak < 20 meter DAN Speed < 3 km/h
+                                // 2. KECUALI sudah lebih dari 5 menit sejak data terakhir disimpan (Keep-alive data)
+                                if ($dist < 20 && $speed < 3 && $timeSinceLastSaved < 5) {
                                     $shouldInsert = false;
                                 }
                             }

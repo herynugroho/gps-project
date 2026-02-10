@@ -75,24 +75,17 @@
         var pathLine = null;
         var markers = [];
 
-        // Fungsi Helper untuk merapikan waktu ke WITA
         function formatWita(timeString) {
             if (!timeString) return "-";
             const date = new Date(timeString.replace(' ', 'T') + 'Z');
             return date.toLocaleTimeString('id-ID', { hour12: false });
         }
 
-        // Fungsi Helper untuk format durasi (ms ke jam/menit)
         function formatDuration(ms) {
-            if (ms < 0) ms = 0;
-            const totalSeconds = Math.floor(ms / 1000);
-            const hours = Math.floor(totalSeconds / 3600);
-            const minutes = Math.floor((totalSeconds % 3600) / 60);
-            
-            let result = "";
-            if (hours > 0) result += hours + " jam ";
-            if (minutes > 0 || hours === 0) result += minutes + " menit";
-            return result.trim();
+            const totalMinutes = Math.floor(ms / 60000);
+            const hours = Math.floor(totalMinutes / 60);
+            const minutes = totalMinutes % 60;
+            return hours > 0 ? `${hours} jam ${minutes} menit` : `${minutes} menit`;
         }
 
         function loadHistory(range) {
@@ -107,56 +100,44 @@
 
                     let filteredPoints = [];
                     let parkingEvents = [];
-                    let lastValidPoint = null;
-                    let stayPoints = [];
+                    let lastP = null;
 
-                    // Fungsi untuk memproses stayPoints menjadi event parkir
-                    const processStay = (points) => {
-                        if (points.length > 10) {
-                            const startTime = new Date(points[0].gps_time.replace(' ', 'T') + 'Z');
-                            const endTime = new Date(points[points.length - 1].gps_time.replace(' ', 'T') + 'Z');
-                            parkingEvents.push({
-                                ...points[0],
-                                durationMs: endTime - startTime
-                            });
-                        }
-                    };
-
-                    data.forEach((p) => {
-                        let currentPos = L.latLng(parseFloat(p.latitude), parseFloat(p.longitude));
-
-                        if (lastValidPoint) {
-                            let dist = lastValidPoint.distanceTo(currentPos);
-                            if (dist < 25) {
-                                stayPoints.push(p);
-                            } else {
-                                processStay(stayPoints);
-                                filteredPoints.push([currentPos.lat, currentPos.lng]);
-                                lastValidPoint = currentPos;
-                                stayPoints = [];
+                    data.forEach((p, index) => {
+                        const currentPos = [parseFloat(p.latitude), parseFloat(p.longitude)];
+                        
+                        if (lastP) {
+                            const timeDiff = new Date(p.gps_time.replace(' ', 'T') + 'Z') - new Date(lastP.gps_time.replace(' ', 'T') + 'Z');
+                            
+                            // LOGIKA BARU: Jika jeda waktu antar data > 5 menit, dianggap parkir
+                            if (timeDiff > 300000) { 
+                                parkingEvents.push({
+                                    latitude: lastP.latitude,
+                                    longitude: lastP.longitude,
+                                    startTime: lastP.gps_time,
+                                    duration: timeDiff
+                                });
                             }
-                        } else {
-                            filteredPoints.push([currentPos.lat, currentPos.lng]);
-                            lastValidPoint = currentPos;
                         }
-                    });
 
-                    // Cek sisa stayPoints di akhir data
-                    processStay(stayPoints);
+                        filteredPoints.push(currentPos);
+                        lastP = p;
+                    });
 
                     pathLine = L.polyline(filteredPoints, { color: '#3b82f6', weight: 6, opacity: 0.85, lineJoin: 'round' }).addTo(map);
                     
+                    // Marker Awal & Akhir
                     markers.push(L.circleMarker(filteredPoints[0], { radius: 7, fillColor: "#22c55e", color: "#fff", weight: 3, fillOpacity: 1 }).addTo(map));
                     markers.push(L.circleMarker(filteredPoints[filteredPoints.length-1], { radius: 7, fillColor: "#ef4444", color: "#fff", weight: 3, fillOpacity: 1 }).addTo(map));
 
+                    // Marker Parkir
                     parkingEvents.forEach(evt => {
                         let m = L.marker([evt.latitude, evt.longitude], {
                             icon: L.divIcon({ className: 'parking-marker', html: 'P', iconSize: [22, 22], iconAnchor: [11, 11] })
                         }).addTo(map).bindPopup(`
                             <div class="p-1">
-                                <b class="text-amber-600 uppercase text-[10px] tracking-wider">Area Parkir</b><br>
-                                <span class="text-[11px] text-slate-600">Mulai: ${formatWita(evt.gps_time)} WITA</span><br>
-                                <span class="text-[11px] font-bold text-slate-800">Durasi: ${formatDuration(evt.durationMs)}</span>
+                                <b class="text-amber-600 uppercase text-[10px]">Area Parkir</b><br>
+                                <span class="text-[11px]">Mulai: ${formatWita(evt.startTime)}</span><br>
+                                <span class="text-[11px] font-bold">Durasi: ${formatDuration(evt.duration)}</span>
                             </div>
                         `);
                         markers.push(m);
@@ -165,16 +146,13 @@
                     map.fitBounds(pathLine.getBounds(), { padding: [60, 60] });
                     document.getElementById('stat-points').innerText = data.length.toLocaleString();
                     document.getElementById('stat-parking').innerText = parkingEvents.length;
-                    document.getElementById('stat-dist').innerText = calculateDistance(filteredPoints).toFixed(2);
+                    
+                    let dist = 0;
+                    for (let i = 0; i < filteredPoints.length - 1; i++) {
+                        dist += L.latLng(filteredPoints[i]).distanceTo(L.latLng(filteredPoints[i+1]));
+                    }
+                    document.getElementById('stat-dist').innerText = (dist / 1000).toFixed(2);
                 });
-        }
-
-        function calculateDistance(coords) {
-            let total = 0;
-            for (let i = 0; i < coords.length - 1; i++) {
-                total += L.latLng(coords[i]).distanceTo(L.latLng(coords[i+1]));
-            }
-            return total / 1000;
         }
 
         function changeRange(range) {
