@@ -24,6 +24,10 @@ class GpsServer extends Command
 
         $socket->on('connection', function (ConnectionInterface $connection) {
             $connection->on('data', function ($data) use ($connection) {
+                // Menampilkan log hex agar Bapak bisa memantau data yang masuk
+                $hex = bin2hex($data);
+                $this->info("📥 RAW HEX RECEIVED: " . $hex);
+                
                 $this->handleIncomingData($connection, $data);
             });
         });
@@ -50,8 +54,10 @@ class GpsServer extends Command
     {
         $is4G = str_starts_with($hex, '7979');
         
-        // Offset: 4G (7979) punya 2 byte length, 2G (7878) punya 1 byte length
-        $protocolIdPos = $is4G ? 6 : 4;
+        // Koreksi Offset Protokol:
+        // 78 78 -> Protocol ID ada di byte ke-3 (index hex 6)
+        // 79 79 -> Protocol ID ada di byte ke-4 (index hex 8)
+        $protocolIdPos = $is4G ? 4 : 3;
         $protocolId = substr($hex, $protocolIdPos * 2, 2);
         
         // Ambil Serial Number (2 byte sebelum CRC & Stop bit)
@@ -60,49 +66,51 @@ class GpsServer extends Command
         // --- A. LOGIN PACKET (01) ---
         if ($protocolId == '01') {
             $terminalId = substr($hex, 8, 16);
-            $this->info("🔑 GT06N LOGIN: " . $terminalId);
+            $this->info("🔑 GT06N LOGIN ATTEMPT: " . $terminalId);
 
             $resBody = "0501" . $serialNum;
             $crc = $this->getCRC16($resBody);
             $response = hex2bin("7878" . $resBody . $crc . "0d0a");
             $connection->write($response);
+            $this->info("📤 SENDING LOGIN RESPONSE: 7878" . $resBody . $crc . "0d0a");
         } 
         
-        // --- B. GPS LOCATION (22) ---
-        elseif ($protocolId == '22') {
-            $this->info("📍 PROCESSING 4G LOCATION DATA...");
+        // --- B. GPS LOCATION (22 atau 12) ---
+        elseif ($protocolId == '22' || $protocolId == '12') {
+            $this->info("📍 PROCESSING LOCATION DATA (" . ($is4G ? "4G" : "2G") . ")...");
             
-            // Parsing Koordinat (Offset untuk paket 7979)
-            $startOffset = $is4G ? 10 : 6; 
+            // Parsing Koordinat (Offset disesuaikan untuk paket 7979)
+            $startOffset = $is4G ? 5 : 4; 
             
-            // Data Lokasi pada paket 22:
-            // Datetime(6), Sat(1), Lat(4), Lng(4), Speed(1), Course(2)
-            $latHex = substr($hex, ($startOffset + 7) * 2, 8);
-            $lngHex = substr($hex, ($startOffset + 11) * 2, 8);
-            $speedHex = substr($hex, ($startOffset + 15) * 2, 2);
+            $latHex = substr($hex, ($startOffset + 6) * 2, 8);
+            $lngHex = substr($hex, ($startOffset + 10) * 2, 8);
+            $speedHex = substr($hex, ($startOffset + 14) * 2, 2);
             
             $lat = hexdec($latHex) / 1800000;
             $lng = hexdec($lngHex) / 1800000;
             $speed = hexdec($speedHex);
 
-            // Mapping Device (Potong ID jika ada 0 di depan)
+            // Mapping Device
             $terminalId = substr($hex, 8, 16);
             $device = DB::table('devices')
                 ->where('factory_id', 'LIKE', '%' . substr($terminalId, -12))
                 ->first();
 
             if ($device) {
-                // ACC Status (Biasanya di bit status paket heartbeat atau paket lokasi biner)
+                // ACC Status: Sederhananya jika speed > 0 atau cek bit status
                 $accStatus = ($speed > 5) ? 1 : 0; 
                 $this->savePosition($device, $lat, $lng, $speed, $accStatus);
                 $this->info("✅ SUCCESS: $device->name Berhasil Update!");
+            } else {
+                $this->warn("⚠️ Device Not Found for ID: " . $terminalId);
             }
         }
         
         // --- C. HEARTBEAT (13) ---
         elseif ($protocolId == '13') {
             $this->info("💓 HEARTBEAT RECEIVED");
-            $response = hex2bin("78780513" . $serialNum . $this->getCRC16("0513".$serialNum) . "0d0a");
+            $resBody = "0513" . $serialNum;
+            $response = hex2bin("7878" . $resBody . $this->getCRC16($resBody) . "0d0a");
             $connection->write($response);
         }
     }
@@ -118,6 +126,7 @@ class GpsServer extends Command
 
         if ($cmd == 'BP05') {
             $connection->write("(" . $factoryId . "AP05)");
+            $this->info("🔑 Text Login: " . $factoryId);
         } 
         elseif (($cmd == 'BR00' || $cmd == 'BP04') && $device) {
             if (preg_match('/([AV])(\d+\.\d+)([NS])(\d+\.\d+)([EW])([\d\.]+)/', $data, $matches)) {
