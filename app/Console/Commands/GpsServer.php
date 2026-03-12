@@ -52,11 +52,12 @@ class GpsServer extends Command
 
     private function parseBinaryProtocol($connection, $hex)
     {
-        $is4G = str_starts_with($hex, '7979');
+        $startBit = substr($hex, 0, 4);
+        $is4G = ($startBit === '7979');
         
         // Koreksi Offset Protokol:
-        // 78 78 -> Protocol ID ada di byte ke-3 (index hex 6)
-        // 79 79 -> Protocol ID ada di byte ke-4 (index hex 8)
+        // 78 78 [Len] [Prot] -> Index hex 6
+        // 79 79 [LenHi] [LenLo] [Prot] -> Index hex 8
         $protocolIdPos = $is4G ? 4 : 3;
         $protocolId = substr($hex, $protocolIdPos * 2, 2);
         
@@ -70,25 +71,37 @@ class GpsServer extends Command
 
             $resBody = "0501" . $serialNum;
             $crc = $this->getCRC16($resBody);
+            // Login response selalu pakai 7878 menurut standar Concox
             $response = hex2bin("7878" . $resBody . $crc . "0d0a");
             $connection->write($response);
             $this->info("📤 SENDING LOGIN RESPONSE: 7878" . $resBody . $crc . "0d0a");
         } 
         
-        // --- B. GPS LOCATION (22 atau 12) ---
-        elseif ($protocolId == '22' || $protocolId == '12') {
-            $this->info("📍 PROCESSING LOCATION DATA (" . ($is4G ? "4G" : "2G") . ")...");
+        // --- B. GPS LOCATION (22, 12, atau 94 untuk 4G) ---
+        elseif ($protocolId == '22' || $protocolId == '12' || $protocolId == '94') {
+            $this->info("📍 PROCESSING DATA PACKET (" . $protocolId . ")...");
             
-            // Parsing Koordinat (Offset disesuaikan untuk paket 7979)
-            $startOffset = $is4G ? 5 : 4; 
-            
-            $latHex = substr($hex, ($startOffset + 6) * 2, 8);
-            $lngHex = substr($hex, ($startOffset + 10) * 2, 8);
-            $speedHex = substr($hex, ($startOffset + 14) * 2, 2);
-            
-            $lat = hexdec($latHex) / 1800000;
-            $lng = hexdec($lngHex) / 1800000;
-            $speed = hexdec($speedHex);
+            // Default nilai
+            $lat = null; $lng = null; $speed = 0; $accStatus = 0;
+
+            // Jika paket adalah 22 (Lokasi Murni)
+            if ($protocolId == '22' || $protocolId == '12') {
+                $startOffset = $is4G ? 5 : 4; 
+                $lat = hexdec(substr($hex, ($startOffset + 6) * 2, 8)) / 1800000;
+                $lng = hexdec(substr($hex, ($startOffset + 10) * 2, 8)) / 1800000;
+                $speed = hexdec(substr($hex, ($startOffset + 14) * 2, 2));
+            } 
+            // Jika paket adalah 94 (Information Transmission - Sering berisi status)
+            elseif ($protocolId == '94') {
+                // Berikan respon ACK agar alat senang dan terus kirim data
+                $resBody = "000594" . $serialNum;
+                $crc = $this->getCRC16($resBody);
+                $connection->write(hex2bin($startBit . $resBody . $crc . "0d0a"));
+                
+                // Pada beberapa model 4G, lokasi juga ada di dalam paket 94 ini.
+                // Namun biasanya ia diikuti paket 22. Jika Bapak melihat koordinat 0, 
+                // kita akan bedah lagi offset-nya.
+            }
 
             // Mapping Device
             $terminalId = substr($hex, 8, 16);
@@ -96,13 +109,10 @@ class GpsServer extends Command
                 ->where('factory_id', 'LIKE', '%' . substr($terminalId, -12))
                 ->first();
 
-            if ($device) {
-                // ACC Status: Sederhananya jika speed > 0 atau cek bit status
+            if ($device && $lat && $lng) {
                 $accStatus = ($speed > 5) ? 1 : 0; 
                 $this->savePosition($device, $lat, $lng, $speed, $accStatus);
                 $this->info("✅ SUCCESS: $device->name Berhasil Update!");
-            } else {
-                $this->warn("⚠️ Device Not Found for ID: " . $terminalId);
             }
         }
         
