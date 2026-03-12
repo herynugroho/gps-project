@@ -35,23 +35,62 @@ class GpsServer extends Command
         $hex = bin2hex($raw);
         $text = trim($raw);
 
-        // --- 1. DETEKSI PROTOKOL TEKS (MODUL LAMA) ---
+        // --- 1. PROTOKOL TEKS (MODUL LAMA) ---
         if (str_starts_with($text, '(') && str_ends_with($text, ')')) {
             $this->parseTextProtocol($connection, $text);
         } 
-        
-        // --- 2. DETEKSI PROTOKOL BINER CONCOX (GT06N) ---
-        // Biasanya dimulai dengan 7878 (Start Bit)
+        // --- 2. PROTOKOL BINER CONCOX (GT06N 4G) ---
         elseif (str_starts_with($hex, '7878')) {
             $this->parseBinaryProtocol($connection, $hex);
         }
+    }
+
+    private function parseBinaryProtocol($connection, $hex)
+    {
+        $protocolId = substr($hex, 6, 2);
+        $serialNum = substr($hex, strlen($hex) - 12, 4);
+
+        // ID 01: Login Packet
+        if ($protocolId == '01') {
+            $terminalId = substr($hex, 8, 16); 
+            $this->info("🔑 GT06N Login Attempt: $terminalId");
+            
+            // Response format: 78 78 [Length] [Protocol] [Serial] [CRC] 0D 0A
+            $resBody = "0501" . $serialNum;
+            $crc = $this->getCRC16($resBody);
+            $response = hex2bin("7878" . $resBody . $crc . "0d0a");
+            
+            $connection->write($response);
+        } 
         
-        else {
-            $this->warn("❓ Unknown Data Received: " . $hex);
+        // ID 22 atau 12: GPS Location Packet
+        elseif ($protocolId == '22' || $protocolId == '12') {
+            $latHex = substr($hex, 22, 8);
+            $lngHex = substr($hex, 30, 8);
+            $speedHex = substr($hex, 38, 2);
+            $courseStatus = substr($hex, 40, 4);
+
+            $lat = hexdec($latHex) / 1800000;
+            $lng = hexdec($lngHex) / 1800000;
+            $speed = hexdec($speedHex);
+            
+            // ACC Status dari bit status (biasanya bit ke-15 di paket ini)
+            $accStatus = (hexdec(substr($hex, 60, 2)) & 0x02) ? 1 : 0;
+
+            // Cari device (kita buat fleksibel untuk mencocokkan ID di log)
+            $terminalId = substr($hex, 8, 16);
+            $device = DB::table('devices')
+                ->where('factory_id', $terminalId)
+                ->orWhere('imei', 'LIKE', '%' . substr($terminalId, -15))
+                ->first();
+
+            if ($device) {
+                $this->savePosition($device, $lat, $lng, $speed, $accStatus);
+                $this->info("📍 GT06N Update: $device->name | Speed: $speed km/h");
+            }
         }
     }
 
-    // LOGIKA PARSER LAMA (TETAP DIJAGA AGAR KOTA 1 & 2 TETAP JALAN)
     private function parseTextProtocol($connection, $text)
     {
         $content = substr($text, 1, -1);
@@ -61,9 +100,8 @@ class GpsServer extends Command
 
         $device = DB::table('devices')->where('factory_id', $factoryId)->first();
 
-        if ($cmd == 'BP05') { // Login
+        if ($cmd == 'BP05') {
             $imei = substr($data, 0, 15);
-            DB::table('devices')->where('imei', $imei)->update(['factory_id' => $factoryId]);
             $connection->write("(" . $factoryId . "AP05)");
             $this->info("🔑 Text Login: $imei");
         } 
@@ -78,66 +116,33 @@ class GpsServer extends Command
         }
     }
 
-    // LOGIKA PARSER BARU (KHUSUS GT06N 4G)
-    private function parseBinaryProtocol($connection, $hex)
-    {
-        $protocolId = substr($hex, 6, 2);
-
-        // ID 01: Login Packet
-        if ($protocolId == '01') {
-            $terminalId = substr($hex, 8, 16); // Ambil Terminal ID (Seringkali bagian dari IMEI)
-            $this->info("🔑 GT06N Login Attempt: $terminalId");
-            
-            // Balas Login (Format: 78 78 05 01 [Serial] [Error Check] 0D 0A)
-            $response = hex2bin('78780501' . substr($hex, -12, 4) . '00000d0a');
-            $connection->write($response);
-        } 
-        
-        // ID 22: GPS Location Packet (Untuk GT06 4G)
-        elseif ($protocolId == '22' || $protocolId == '12') {
-            // Parsing Latitude, Longitude, Speed dari format biner
-            $latHex = substr($hex, 22, 8);
-            $lngHex = substr($hex, 30, 8);
-            $speedHex = substr($hex, 38, 2);
-            $statusHex = substr($hex, 60, 2); // Bit status ACC biasanya di sini
-
-            $lat = hexdec($latHex) / 1800000;
-            $lng = hexdec($lngHex) / 1800000;
-            $speed = hexdec($speedHex);
-            $accStatus = (hexdec($statusHex) & 0x02) ? 1 : 0; // Deteksi ACC Bit
-
-            // Cari device berdasarkan factory_id atau Terminal ID yang mirip
-            // Kita coba cari yang mengandung potongan ID biner tersebut
-            $device = DB::table('devices')
-                ->where('factory_id', 'LIKE', '%' . substr($hex, 8, 8) . '%')
-                ->orWhere('imei', 'LIKE', '%' . substr($hex, 8, 8) . '%')
-                ->first();
-
-            if ($device) {
-                $this->savePosition($device, $lat, $lng, $speed, $accStatus);
-                $this->info("📍 GT06N Update: $device->name | ACC: $accStatus");
-            }
-        }
-    }
-
     private function savePosition($device, $lat, $lng, $speed, $acc)
     {
-        $speed = ($speed < 5) ? 0 : $speed;
-        
+        $speed = ($speed < 3) ? 0 : $speed;
         DB::table('positions')->insert([
             'imei' => $device->imei, 'latitude' => $lat, 'longitude' => $lng,
             'speed' => $speed, 'gps_time' => Carbon::now(), 'created_at' => Carbon::now()
         ]);
-
         DB::table('devices')->where('imei', $device->imei)->update([
             'acc_status' => $acc, 'last_online' => Carbon::now(), 'updated_at' => Carbon::now()
         ]);
     }
 
-    private function calculateDistance($lat1, $lon1, $lat2, $lon2) {
-        $theta = $lon1 - $lon2;
-        $dist = sin(deg2rad($lat1)) * sin(deg2rad($lat2)) + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * cos(deg2rad($theta));
-        return rad2deg(acos($dist)) * 60 * 1.1515 * 1.609344 * 1000;
+    // Fungsi Kalkulasi CRC16 X25/ITU untuk Concox
+    private function getCRC16($hex) {
+        $data = hex2bin($hex);
+        $crc = 0xFFFF;
+        for ($i = 0; $i < strlen($data); $i++) {
+            $crc ^= ord($data[$i]);
+            for ($j = 0; $j < 8; $j++) {
+                if ($crc & 0x0001) {
+                    $crc = ($crc >> 1) ^ 0x8408;
+                } else {
+                    $crc >>= 1;
+                }
+            }
+        }
+        return sprintf('%04x', ~$crc & 0xFFFF);
     }
 
     private function dmToDecimal($dm) {
