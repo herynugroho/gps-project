@@ -11,10 +11,12 @@ use Carbon\Carbon;
 class GpsServer extends Command
 {
     protected $signature = 'gps:server {port=5022}';
-    protected $description = 'GPS Server Optimized for GT06N 4G with Connection State';
+    protected $description = 'GPS Server Optimized for GT06N 4G with Connection Buffering';
 
     // Map untuk menyimpan objek device berdasarkan ID koneksi
     private $connectionDeviceMap = [];
+    // Buffer untuk menangani paket data yang terpotong
+    private $connectionBuffer = [];
 
     public function handle()
     {
@@ -27,12 +29,12 @@ class GpsServer extends Command
 
         $socket->on('connection', function (ConnectionInterface $connection) {
             $connId = spl_object_hash($connection);
+            $this->connectionBuffer[$connId] = '';
             
             $connection->on('data', function ($data) use ($connection, $connId) {
-                $hex = bin2hex($data);
-                $this->info("📥 RAW HEX RECEIVED: " . $hex);
-                
-                $this->handleIncomingData($connection, $data, $connId);
+                // Tambahkan data baru ke buffer hex
+                $this->connectionBuffer[$connId] .= bin2hex($data);
+                $this->processBuffer($connection, $connId);
             });
 
             $connection->on('close', function() use ($connId) {
@@ -40,94 +42,114 @@ class GpsServer extends Command
                     $this->info("🔌 Connection Closed: " . $this->connectionDeviceMap[$connId]->name);
                 }
                 unset($this->connectionDeviceMap[$connId]);
+                unset($this->connectionBuffer[$connId]);
             });
         });
 
         $loop->run();
     }
 
-    private function handleIncomingData($connection, $raw, $connId)
+    private function processBuffer($connection, $connId)
     {
-        $hex = bin2hex($raw);
-        $text = trim($raw);
+        $buffer = &$this->connectionBuffer[$connId];
 
-        // 1. PROTOKOL BINER CONCOX (7878 / 7979)
-        if (str_starts_with($hex, '7878') || str_starts_with($hex, '7979')) {
-            $this->parseBinaryProtocol($connection, $hex, $connId);
-        }
-        // 2. PROTOKOL TEKS (MODUL LAMA)
-        elseif (str_starts_with($text, '(') && str_ends_with($text, ')')) {
-            $this->parseTextProtocol($connection, $text);
+        // Cari start bit protokol (7878, 7979, atau teks '(' )
+        while (strlen($buffer) >= 4) {
+            if (str_starts_with($buffer, '7878')) {
+                // Protokol 2G (GT02 / GT06N 2G)
+                $len = hexdec(substr($buffer, 4, 2));
+                $totalLenHex = ($len + 5) * 2; // Start(2) + Len(1) + Serial(2) + CRC(2) + Stop(2) -> dikali 2 untuk hex
+                if (strlen($buffer) < $totalLenHex) break; // Tunggu data lengkap
+
+                $packet = substr($buffer, 0, $totalLenHex);
+                $this->handleBinaryPacket($connection, $packet, $connId, false);
+                $buffer = substr($buffer, $totalLenHex);
+            } 
+            elseif (str_starts_with($buffer, '7979')) {
+                // Protokol 4G (GT06N 4G)
+                if (strlen($buffer) < 8) break;
+                $len = hexdec(substr($buffer, 4, 4));
+                $totalLenHex = ($len + 6) * 2; // Start(2) + Len(2) + Serial(2) + CRC(2) + Stop(2)
+                if (strlen($buffer) < $totalLenHex) break;
+
+                $packet = substr($buffer, 0, $totalLenHex);
+                $this->handleBinaryPacket($connection, $packet, $connId, true);
+                $buffer = substr($buffer, $totalLenHex);
+            }
+            elseif (str_starts_with($buffer, '28')) { // ASCII '('
+                $endPos = strpos($buffer, '29'); // ASCII ')'
+                if ($endPos === false) break;
+                
+                $packetHex = substr($buffer, 0, $endPos + 2);
+                $this->handleTextPacket($connection, hex2bin($packetHex));
+                $buffer = substr($buffer, $endPos + 2);
+            }
+            else {
+                // Buang data sampah di depan jika tidak sesuai start bit
+                $buffer = substr($buffer, 2);
+            }
         }
     }
 
-    private function parseBinaryProtocol($connection, $hex, $connId)
+    private function handleBinaryPacket($connection, $hex, $connId, $is4G)
     {
-        $startBit = substr($hex, 0, 4);
-        $is4G = ($startBit === '7979');
+        $this->info("📥 BINARY RECEIVED (" . ($is4G ? "4G" : "2G") . "): " . $hex);
         
-        // Offset Protokol ID: 7878 (posisi 3), 7979 (posisi 4)
         $protocolIdPos = $is4G ? 4 : 3;
         $protocolId = substr($hex, $protocolIdPos * 2, 2);
-        
-        // Ambil Serial Number (2 byte sebelum CRC & Stop bit)
         $serialNum = substr($hex, strlen($hex) - 12, 4);
 
-        // --- A. LOGIN PACKET (01) ---
+        // --- LOGIN (01) ---
         if ($protocolId == '01') {
             $terminalId = substr($hex, 8, 16);
-            $this->info("🔑 GT06N LOGIN ATTEMPT: " . $terminalId);
-
             $device = DB::table('devices')
-                ->where('factory_id', 'LIKE', '%' . substr($terminalId, -12))
-                ->orWhere('imei', 'LIKE', '%' . substr($terminalId, -12))
+                ->where('factory_id', 'LIKE', '%' . substr($terminalId, -11))
+                ->orWhere('imei', 'LIKE', '%' . substr($terminalId, -11))
                 ->first();
 
             if ($device) {
                 $this->connectionDeviceMap[$connId] = $device;
                 $this->info("✅ Device Authenticated: " . $device->name);
-                
-                // Response Login (Selalu pakai 7878)
                 $resBody = "0501" . $serialNum;
-                $crc = $this->getCRC16($resBody);
-                $connection->write(hex2bin("7878" . $resBody . $crc . "0d0a"));
-                
-                // Update status online agar dashboard tahu alat sudah 'hidup'
+                $connection->write(hex2bin("7878" . $resBody . $this->getCRC16($resBody) . "0d0a"));
                 $this->updateDeviceStatus($device, 0);
-            } else {
-                $this->warn("❌ UNKNOWN DEVICE LOGIN: " . $terminalId);
             }
         } 
-        
-        // --- B. DATA PACKETS (22: Lokasi, 94: Info Status, 13: Heartbeat) ---
+        // --- DATA (22, 12, 94, 13) ---
         else {
             $device = $this->connectionDeviceMap[$connId] ?? null;
             if (!$device) return;
 
             if ($protocolId == '94') {
-                $this->info("📊 Info Packet (94) Received for " . $device->name);
-                // Jawab ACK khusus 4G
+                $this->info("📊 Info Packet (94) for " . $device->name);
                 $resBody = "000594" . $serialNum;
-                $crc = $this->getCRC16($resBody);
-                $connection->write(hex2bin("7979" . $resBody . $crc . "0d0a"));
+                $startBit = $is4G ? "7979" : "7878";
+                $connection->write(hex2bin($startBit . $resBody . $this->getCRC16($resBody) . "0d0a"));
                 $this->updateDeviceStatus($device, $device->acc_status);
             } 
             elseif ($protocolId == '13') {
-                $this->info("💓 Heartbeat Received for " . $device->name);
                 $resBody = "0513" . $serialNum;
                 $connection->write(hex2bin("7878" . $resBody . $this->getCRC16($resBody) . "0d0a"));
                 $this->updateDeviceStatus($device, $device->acc_status);
             }
             elseif ($protocolId == '22' || $protocolId == '12') {
                 $this->info("📍 Location Packet Received for " . $device->name);
-                $startOffset = $is4G ? 5 : 4; 
-                $lat = hexdec(substr($hex, ($startOffset + 6) * 2, 8)) / 1800000;
-                $lng = hexdec(substr($hex, ($startOffset + 10) * 2, 8)) / 1800000;
-                $speed = hexdec(substr($hex, ($startOffset + 14) * 2, 2));
+                
+                // Koreksi Byte Offset:
+                // 2G: Start(2), Len(1), Prot(1), Time(6), Sat(1), Lat(4), Lng(4), Spd(1)...
+                //     Lat starts at byte 11 (index 22)
+                // 4G: Start(2), Len(2), Prot(1), Time(6), Sat(1), Lat(4), Lng(4), Spd(1)...
+                //     Lat starts at byte 12 (index 24)
+                $latByte = $is4G ? 12 : 11;
+                $lngByte = $is4G ? 16 : 15;
+                $spdByte = $is4G ? 20 : 19;
 
-                // Deteksi ACC dari bit status (byte ke-30 pada paket 22 4G)
-                $statusByte = hexdec(substr($hex, ($startOffset + 24) * 2, 2));
-                $accStatus = ($statusByte & 0x02) ? 1 : 0;
+                $lat = hexdec(substr($hex, $latByte * 2, 8)) / 1800000;
+                $lng = hexdec(substr($hex, $lngByte * 2, 8)) / 1800000;
+                $speed = hexdec(substr($hex, $spdByte * 2, 2));
+
+                // Deteksi ACC: Sederhana via speed atau status bit jika tersedia
+                $accStatus = ($speed > 2) ? 1 : 0;
 
                 $this->savePosition($device, $lat, $lng, $speed, $accStatus);
                 $this->info("✅ Update Success: " . $device->name . " ($lat, $lng)");
@@ -135,32 +157,34 @@ class GpsServer extends Command
         }
     }
 
-    private function parseTextProtocol($connection, $text)
+    private function handleTextPacket($connection, $text)
     {
-        $content = substr($text, 1, -1);
-        $factoryId = substr($content, 0, 12);
-        $cmd = substr($content, 12, 4);
-        $data = substr($content, 16);
-        $device = DB::table('devices')->where('factory_id', $factoryId)->first();
+        $this->info("📥 TEXT RECEIVED: " . $text);
+        if (preg_match('/\(([^)]+)\)/', $text, $match)) {
+            $content = $match[1];
+            $factoryId = substr($content, 0, 12);
+            $cmd = substr($content, 12, 4);
+            $data = substr($content, 16);
+            
+            $device = DB::table('devices')->where('factory_id', $factoryId)->first();
 
-        if ($cmd == 'BP05') {
-            $connection->write("(" . $factoryId . "AP05)");
-            $this->info("🔑 Text Login: " . $factoryId);
-        } 
-        elseif (($cmd == 'BR00' || $cmd == 'BP04') && $device) {
-            if (preg_match('/([AV])(\d+\.\d+)([NS])(\d+\.\d+)([EW])([\d\.]+)/', $data, $matches)) {
-                $lat = $this->dmToDecimal($matches[2]) * ($matches[3] == 'S' ? -1 : 1);
-                $lng = $this->dmToDecimal($matches[4]) * ($matches[5] == 'W' ? -1 : 1);
-                $speed = floatval($matches[6]) * 1.852;
-                $this->savePosition($device, $lat, $lng, $speed, ($speed > 5 ? 1 : 0));
-                $connection->write("(" . $factoryId . ($cmd == 'BR00' ? "AR00" : "AP04") . ")");
+            if ($cmd == 'BP05') {
+                $connection->write("(" . $factoryId . "AP05)");
+            } 
+            elseif (($cmd == 'BR00' || $cmd == 'BP04') && $device) {
+                if (preg_match('/([AV])(\d+\.\d+)([NS])(\d+\.\d+)([EW])([\d\.]+)/', $data, $matches)) {
+                    $lat = $this->dmToDecimal($matches[2]) * ($matches[3] == 'S' ? -1 : 1);
+                    $lng = $this->dmToDecimal($matches[4]) * ($matches[5] == 'W' ? -1 : 1);
+                    $speed = floatval($matches[6]) * 1.852;
+                    $this->savePosition($device, $lat, $lng, $speed, ($speed > 5 ? 1 : 0));
+                    $connection->write("(" . $factoryId . ($cmd == 'BR00' ? "AR00" : "AP04") . ")");
+                }
             }
         }
     }
 
     private function savePosition($device, $lat, $lng, $speed, $acc)
     {
-        // Abaikan koordinat 0 (GPS belum lock)
         if ($lat == 0 || $lng == 0 || abs($lat) > 90 || abs($lng) > 180) return;
 
         $speed = ($speed < 3) ? 0 : $speed;
