@@ -100,7 +100,7 @@
         <div class="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar" id="unit-list">
             <div class="flex flex-col items-center justify-center h-40 text-slate-300">
                 <i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2"></i>
-                <p class="text-[10px] font-bold uppercase">Sinkronisasi...</p>
+                <p class="text-[10px] font-bold uppercase tracking-widest">Sinkronisasi...</p>
             </div>
         </div>
 
@@ -211,11 +211,12 @@
                 .then(res => res.json())
                 .then(data => {
                     let listHtml = '';
-                    data.forEach(unit => {
-                        const lat = parseFloat(unit.latitude);
-                        const lng = parseFloat(unit.longitude);
-                        if (!lat || !lng) return;
+                    console.log("Troubleshoot - API Data Received:", data); // LOG UNTUK PENGECEKAN
 
+                    data.forEach(unit => {
+                        const lat = unit.latitude ? parseFloat(unit.latitude) : null;
+                        const lng = unit.longitude ? parseFloat(unit.longitude) : null;
+                        
                         const speed = Math.round(unit.speed || 0);
                         const isMoving = speed >= 5;
                         const accOn = unit.acc_status == 1;
@@ -223,10 +224,11 @@
 
                         // Status Color Logic
                         let statusColorClass = 'status-stop';
-                        if (isMoving) statusColorClass = 'status-moving';
+                        if (!lat || !lng) statusColorClass = 'bg-slate-300'; // Gray if no GPS Fix
+                        else if (isMoving) statusColorClass = 'status-moving';
                         else if (accOn) statusColorClass = 'status-acc-on';
 
-                        // Sidebar List UI
+                        // Sidebar List UI (Tetap muncul meski koordinat kosong)
                         listHtml += `
                             <div onclick="focusUnit('${unit.imei}', ${lat}, ${lng})" 
                                 class="p-4 border-2 rounded-2xl transition-all cursor-pointer ${selectedImei === unit.imei ? 'border-blue-500 bg-blue-50' : 'border-slate-50 bg-white hover:border-blue-200'}">
@@ -238,51 +240,66 @@
                                     <i class="fa-solid fa-key text-[10px] ${accOn ? 'text-blue-500' : 'text-slate-200'}"></i>
                                 </div>
                                 <div class="flex justify-between items-center mt-3">
-                                    <span class="text-[8px] font-black px-2 py-1 rounded-lg uppercase tracking-widest ${isMoving ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'}">
-                                        ${isMoving ? speed + ' KM/H' : 'BERHENTI'}
-                                    </span>
+                                    ${lat && lng ? `
+                                        <span class="text-[8px] font-black px-2 py-1 rounded-lg uppercase tracking-widest ${isMoving ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'}">
+                                            ${isMoving ? speed + ' KM/H' : 'BERHENTI'}
+                                        </span>
+                                    ` : `
+                                        <span class="text-[7px] font-black px-2 py-1 rounded-lg bg-amber-50 text-amber-600 border border-amber-100 uppercase tracking-tighter">
+                                            <i class="fa-solid fa-satellite-dish mr-1 animate-pulse"></i> Menunggu GPS...
+                                        </span>
+                                    `}
                                     <span class="text-[7px] font-bold text-slate-300 uppercase">${isGT06N ? 'GT06N-4G' : 'STD'}</span>
                                 </div>
                             </div>
                         `;
 
-                        // Marker Map UI
-                        const iconHtml = `
-                            <div class="marker-label-container">
-                                <div class="marker-label">
-                                    <i class="fa-solid fa-key text-[8px] ${accOn ? 'text-blue-500' : 'text-slate-200'}"></i>
-                                    ${unit.name}
+                        // Marker Map UI (Hanya jika ada koordinat)
+                        if (lat && lng) {
+                            const iconHtml = `
+                                <div class="marker-label-container">
+                                    <div class="marker-label">
+                                        <i class="fa-solid fa-key text-[8px] ${accOn ? 'text-blue-500' : 'text-slate-200'}"></i>
+                                        ${unit.name}
+                                    </div>
+                                    <div class="marker-dot ${statusColorClass} relative flex items-center justify-center">
+                                         ${isMoving ? '<div class="absolute inset-0 bg-green-500 rounded-full pulse"></div>' : ''}
+                                    </div>
                                 </div>
-                                <div class="marker-dot ${statusColorClass} relative flex items-center justify-center">
-                                     ${isMoving ? '<div class="absolute inset-0 bg-green-500 rounded-full pulse"></div>' : ''}
-                                </div>
-                            </div>
-                        `;
+                            `;
 
-                        const customIcon = L.divIcon({
-                            className: 'custom-icon',
-                            html: iconHtml,
-                            iconSize: [120, 50],
-                            iconAnchor: [60, 45]
-                        });
+                            const customIcon = L.divIcon({
+                                className: 'custom-icon',
+                                html: iconHtml,
+                                iconSize: [120, 50],
+                                iconAnchor: [60, 45]
+                            });
 
-                        if (markers[unit.imei]) {
-                            markers[unit.imei].setLatLng([lat, lng]).setIcon(customIcon);
-                        } else {
-                            markers[unit.imei] = L.marker([lat, lng], {icon: customIcon}).addTo(map);
-                            markers[unit.imei].on('click', () => focusUnit(unit.imei, lat, lng));
+                            if (markers[unit.imei]) {
+                                markers[unit.imei].setLatLng([lat, lng]).setIcon(customIcon);
+                            } else {
+                                markers[unit.imei] = L.marker([lat, lng], {icon: customIcon}).addTo(map);
+                                markers[unit.imei].on('click', () => focusUnit(unit.imei, lat, lng));
+                            }
                         }
 
                         if (selectedImei === unit.imei) updateDetailPanel(unit);
                     });
 
                     document.getElementById('unit-list').innerHTML = listHtml;
-                });
+                })
+                .catch(err => console.error("Sinkronisasi Gagal:", err));
         }
 
         function focusUnit(imei, lat, lng) {
             selectedImei = imei;
-            map.flyTo([lat, lng], 17, { duration: 1 });
+            if (lat && lng) {
+                map.flyTo([lat, lng], 17, { duration: 1.5 });
+            } else {
+                // Beri notifikasi jika user klik tapi unit belum ada lokasi
+                alert("Kendaraan ini belum mengirimkan data koordinat GPS.");
+            }
+            
             document.getElementById('detail-panel').classList.remove('translate-y-[120%]');
             
             if (window.innerWidth < 768) {
@@ -322,7 +339,8 @@
 
             // Icon Background color change
             const iconBg = document.getElementById('det-icon-bg');
-            if (isMoving) iconBg.className = "w-16 h-16 bg-green-500 rounded-2xl flex items-center justify-center text-white text-3xl shadow-xl shadow-green-500/20";
+            if (!unit.latitude || !unit.longitude) iconBg.className = "w-16 h-16 bg-slate-300 rounded-2xl flex items-center justify-center text-white text-3xl shadow-xl";
+            else if (isMoving) iconBg.className = "w-16 h-16 bg-green-500 rounded-2xl flex items-center justify-center text-white text-3xl shadow-xl shadow-green-500/20";
             else if (accOn) iconBg.className = "w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-3xl shadow-xl shadow-blue-500/20";
             else iconBg.className = "w-16 h-16 bg-slate-400 rounded-2xl flex items-center justify-center text-white text-3xl shadow-xl";
         }
