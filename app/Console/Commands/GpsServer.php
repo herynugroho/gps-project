@@ -11,7 +11,10 @@ use Carbon\Carbon;
 class GpsServer extends Command
 {
     protected $signature = 'gps:server {port=5022}';
-    protected $description = 'GPS Server Optimized for GT06N 4G (Binary 7878/7979) and Standard Text';
+    protected $description = 'GPS Server Optimized for GT06N 4G with Connection State';
+
+    // Map untuk menyimpan IMEI berdasarkan koneksi
+    private $connectionDeviceMap = [];
 
     public function handle()
     {
@@ -19,29 +22,36 @@ class GpsServer extends Command
         $loop = \React\EventLoop\Factory::create();
         $socket = new SocketServer("0.0.0.0:$port", [], $loop);
 
-        $this->info("🚀 PRIMA GPS HYBRID SERVER [4G READY] STARTED ON PORT $port");
+        $this->info("🚀 PRIMA GPS SUPER HYBRID SERVER [4G READY] STARTED ON PORT $port");
         $this->info("-------------------------------------------------------");
 
         $socket->on('connection', function (ConnectionInterface $connection) {
-            $connection->on('data', function ($data) use ($connection) {
+            $connId = spl_object_hash($connection);
+            
+            $connection->on('data', function ($data) use ($connection, $connId) {
                 $hex = bin2hex($data);
                 $this->info("📥 RAW HEX RECEIVED: " . $hex);
                 
-                $this->handleIncomingData($connection, $data);
+                $this->handleIncomingData($connection, $data, $connId);
+            });
+
+            $connection->on('close', function() use ($connId) {
+                unset($this->connectionDeviceMap[$connId]);
+                $this->info("🔌 Connection Closed: " . $connId);
             });
         });
 
         $loop->run();
     }
 
-    private function handleIncomingData($connection, $raw)
+    private function handleIncomingData($connection, $raw, $connId)
     {
         $hex = bin2hex($raw);
         $text = trim($raw);
 
         // 1. PROTOKOL BINER CONCOX (7878 / 7979)
         if (str_starts_with($hex, '7878') || str_starts_with($hex, '7979')) {
-            $this->parseBinaryProtocol($connection, $hex);
+            $this->parseBinaryProtocol($connection, $hex, $connId);
         }
         // 2. PROTOKOL TEKS (MODUL LAMA)
         elseif (str_starts_with($text, '(') && str_ends_with($text, ')')) {
@@ -49,14 +59,12 @@ class GpsServer extends Command
         }
     }
 
-    private function parseBinaryProtocol($connection, $hex)
+    private function parseBinaryProtocol($connection, $hex, $connId)
     {
         $startBit = substr($hex, 0, 4);
         $is4G = ($startBit === '7979');
         
-        // Offset Protokol:
-        // 78 78 [Len] [Prot] -> Index hex 6
-        // 79 79 [LenHi] [LenLo] [Prot] -> Index hex 8
+        // Offset Protokol ID
         $protocolIdPos = $is4G ? 4 : 3;
         $protocolId = substr($hex, $protocolIdPos * 2, 2);
         
@@ -68,63 +76,62 @@ class GpsServer extends Command
             $terminalId = substr($hex, 8, 16);
             $this->info("🔑 GT06N LOGIN ATTEMPT: " . $terminalId);
 
-            $resBody = "0501" . $serialNum;
-            $crc = $this->getCRC16($resBody);
-            // Login response selalu pakai 7878
-            $response = hex2bin("7878" . $resBody . $crc . "0d0a");
-            $connection->write($response);
-            $this->info("📤 SENDING LOGIN RESPONSE: 7878" . $resBody . $crc . "0d0a");
+            // Cari device berdasarkan Factory ID atau IMEI
+            $device = DB::table('devices')
+                ->where('factory_id', 'LIKE', '%' . substr($terminalId, -11))
+                ->orWhere('imei', 'LIKE', '%' . substr($terminalId, -11))
+                ->first();
+
+            if ($device) {
+                $this->connectionDeviceMap[$connId] = $device;
+                $this->info("✅ Device Authenticated: " . $device->name);
+                
+                // Response Login (Selalu pakai 7878 untuk handshake)
+                $resBody = "0501" . $serialNum;
+                $crc = $this->getCRC16($resBody);
+                $connection->write(hex2bin("7878" . $resBody . $crc . "0d0a"));
+            } else {
+                $this->warn("❌ UNKNOWN DEVICE LOGIN: " . $terminalId);
+            }
         } 
         
-        // --- B. DATA PACKET (22: Lokasi, 94: Informasi Status) ---
+        // --- B. DATA PACKETS (22: Lokasi, 94: Informasi Status) ---
         elseif ($protocolId == '22' || $protocolId == '12' || $protocolId == '94') {
-            $this->info("📍 PROCESSING DATA PACKET (" . $protocolId . ")...");
-            
-            $lat = null; $lng = null; $speed = 0; $accStatus = 0;
+            // Ambil data device yang sudah tersimpan di memori koneksi
+            $device = $this->connectionDeviceMap[$connId] ?? null;
 
-            // Jika paket lokasi (22)
-            if ($protocolId == '22' || $protocolId == '12') {
+            if (!$device) {
+                $this->warn("⚠️ Packet Received but no authenticated device on this connection.");
+                return;
+            }
+
+            if ($protocolId == '94') {
+                $this->info("📍 Info Packet (94) for " . $device->name);
+                // Jawab ACK khusus 4G (7979)
+                $resBody = "000594" . $serialNum;
+                $crc = $this->getCRC16($resBody);
+                $connection->write(hex2bin("7979" . $resBody . $crc . "0d0a"));
+            } 
+            else {
+                $this->info("📍 Location Packet (" . $protocolId . ") for " . $device->name);
                 $startOffset = $is4G ? 5 : 4; 
                 $lat = hexdec(substr($hex, ($startOffset + 6) * 2, 8)) / 1800000;
                 $lng = hexdec(substr($hex, ($startOffset + 10) * 2, 8)) / 1800000;
                 $speed = hexdec(substr($hex, ($startOffset + 14) * 2, 2));
-                
-                // Status bit biasanya ada di offset tertentu (cek bit ACC)
+
+                // Ambil ACC dari bit status
                 $statusByte = hexdec(substr($hex, ($startOffset + 24) * 2, 2));
                 $accStatus = ($statusByte & 0x02) ? 1 : 0;
-            } 
-            // Jika paket informasi status (94)
-            elseif ($protocolId == '94') {
-                // Jawab ACK agar alat terus mengirim data lokasi
-                $resBody = "000594" . $serialNum;
-                $crc = $this->getCRC16($resBody);
-                $connection->write(hex2bin($startBit . $resBody . $crc . "0d0a"));
-                $this->info("📤 SENDING ACK FOR 94");
-            }
 
-            // MENCARI DEVICE - Ditingkatkan agar lebih toleran terhadap perbedaan ID
-            $terminalId = substr($hex, 8, 16);
-            $device = DB::table('devices')
-                ->where('factory_id', 'LIKE', '%' . substr($terminalId, -11)) // Ambil 11 digit terakhir agar lebih fleksibel
-                ->orWhere('imei', 'LIKE', '%' . substr($terminalId, -11))
-                ->first();
-
-            if ($device && $lat && $lng) {
                 $this->savePosition($device, $lat, $lng, $speed, $accStatus);
-                $this->info("✅ SUCCESS: $device->name Berhasil Update!");
-            } elseif ($device && !$lat) {
-                $this->info("ℹ️ Status Update for $device->name (No GPS yet)");
-            } else {
-                $this->warn("⚠️ Device Not Found for ID: " . $terminalId);
+                $this->info("✅ Update Success: " . $device->name);
             }
         }
         
         // --- C. HEARTBEAT (13) ---
         elseif ($protocolId == '13') {
-            $this->info("💓 HEARTBEAT RECEIVED");
             $resBody = "0513" . $serialNum;
-            $response = hex2bin("7878" . $resBody . $this->getCRC16($resBody) . "0d0a");
-            $connection->write($response);
+            $connection->write(hex2bin("7878" . $resBody . $this->getCRC16($resBody) . "0d0a"));
         }
     }
 
@@ -154,6 +161,8 @@ class GpsServer extends Command
 
     private function savePosition($device, $lat, $lng, $speed, $acc)
     {
+        if ($lat == 0 || $lng == 0) return; // Abaikan jika GPS belum lock (koordinat 0)
+
         $speed = ($speed < 3) ? 0 : $speed;
         DB::table('positions')->insert([
             'imei' => $device->imei, 'latitude' => $lat, 'longitude' => $lng,
