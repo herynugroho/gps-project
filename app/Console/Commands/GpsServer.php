@@ -11,10 +11,10 @@ use Carbon\Carbon;
 class GpsServer extends Command
 {
     protected $signature = 'gps:server {port=5022} {control_port=5023}';
-    protected $description = 'Hybrid GPS Server V7.2 - Smart Command Routing (Binary & Text)';
+    protected $description = 'Hybrid GPS Server V7.3 - Robust Command Routing & Serial Tracking';
 
-    private $connectionDeviceMap = []; // IMEI => Connection
-    private $deviceTypeMap = [];       // IMEI => 'BIN' or 'TXT'
+    private $connectionDeviceMap = []; 
+    private $deviceTypeMap = [];       // IMEI => ['type' => 'BIN/TXT', 'header' => '7878/7979', 'serial' => 1]
     private $connectionBuffer = [];
 
     const CLR_RST   = "\e[0m";
@@ -66,20 +66,23 @@ class GpsServer extends Command
                     [$imei, $cmdText] = explode('|', $payload, 2);
                     if (isset($this->connectionDeviceMap[$imei])) {
                         $gpsConn = $this->connectionDeviceMap[$imei];
-                        $type = $this->deviceTypeMap[$imei] ?? 'BIN';
+                        $devConfig = $this->deviceTypeMap[$imei] ?? ['type' => 'BIN', 'header' => '7878', 'serial' => 1];
                         
-                        if ($type === 'TXT') {
-                            // Perangkat Teks butuh format (IDCOMMAND)
+                        if ($devConfig['type'] === 'TXT') {
                             $device = DB::table('devices')->where('imei', $imei)->first();
                             $id = $device->factory_id ?? substr($imei, -12);
                             $packet = "(" . $id . $cmdText . ")";
                             $gpsConn->write($packet);
                             $this->line(self::CLR_SYS . "📡 [ROUTING CMD] Sent TEXT Format to $imei: $packet" . self::CLR_RST);
                         } else {
-                            // Perangkat Biner butuh format Protocol 80
-                            $binary = $this->buildProtocol80($cmdText);
+                            // Gunakan Serial yang meningkat & Header yang sesuai (2G/4G)
+                            $currentSerial = $this->deviceTypeMap[$imei]['serial'] ?? 1;
+                            $binary = $this->buildProtocol80($cmdText, $devConfig['header'], $currentSerial);
                             $gpsConn->write(hex2bin($binary));
                             $this->line(self::CLR_SYS . "📡 [ROUTING CMD] Sent BINARY Format to $imei: $binary" . self::CLR_RST);
+                            
+                            // Increment serial untuk pengiriman berikutnya
+                            $this->deviceTypeMap[$imei]['serial'] = ($currentSerial + 1) % 65535;
                         }
                         $connection->write(json_encode(['status' => 'success']));
                     } else {
@@ -129,17 +132,26 @@ class GpsServer extends Command
             $device = DB::table('devices')->where('factory_id', 'LIKE', '%' . substr($terminalId, -8))->orWhere('imei', 'LIKE', '%' . substr($terminalId, -8))->first();
             if ($device) {
                 $this->connectionDeviceMap[$device->imei] = $connection;
-                $this->deviceTypeMap[$device->imei] = 'BIN';
-                $this->line(self::CLR_SUCC . "✅ [ONLINE] " . $device->name . " ($device->imei) Type: BINARY" . self::CLR_RST);
+                $this->deviceTypeMap[$device->imei] = [
+                    'type' => 'BIN', 
+                    'header' => ($is4G ? '7979' : '7878'),
+                    'serial' => 1
+                ];
+                $this->line(self::CLR_SUCC . "✅ [ONLINE] " . $device->name . " ($device->imei) Type: BINARY (" . ($is4G ? '4G':'2G') . ")" . self::CLR_RST);
                 $connection->write(hex2bin("78780501" . $serialNum . $this->getCRC16("0501".$serialNum) . "0d0a"));
             }
         } 
+        // --- PARSER BALASAN PERINTAH (PROT 21 / 15) ---
         elseif ($protocolId == '21' || $protocolId == '15') {
-            $lenContent = hexdec(substr($hex, 8, 2));
-            $contentHex = substr($hex, 18, ($lenContent - 4) * 2);
+            $lenContentOffset = ($is4G ? 5 : 4) * 2;
+            $contentStartOffset = ($is4G ? 10 : 9) * 2;
+            
+            $lenContent = hexdec(substr($hex, $lenContentOffset, 2));
+            $contentHex = substr($hex, contentStartOffset, ($lenContent - 4) * 2); // Abaikan Flag 4 byte
             $replyText = hex2bin($contentHex);
             $this->line(self::CLR_REPLY . "📩 [REPLY] From " . ($currentImei ?? 'Unknown') . ": " . $replyText . self::CLR_RST);
         }
+        // --- LOKASI ---
         elseif (in_array($protocolId, ['22', '12', '16', 'a0'])) {
             $latByte = ($is4G && $protocolId == '22') ? 12 : 11;
             if ($protocolId == '16') $latByte = $is4G ? 13 : 12;
@@ -175,14 +187,13 @@ class GpsServer extends Command
             $device = DB::table('devices')->where('factory_id', 'LIKE', '%' . substr($idInPacket, -8))->first();
             if ($device) {
                 $this->connectionDeviceMap[$device->imei] = $connection;
-                $this->deviceTypeMap[$device->imei] = 'TXT';
+                $this->deviceTypeMap[$device->imei] = ['type' => 'TXT', 'header' => '7878', 'serial' => 1];
                 
                 if ($cmd == 'BP05') { 
                     $this->line(self::CLR_SUCC . "✅ [ONLINE] " . $device->name . " ($device->imei) Type: TEXT" . self::CLR_RST);
                     $connection->write("(" . $idInPacket . "AP05)"); 
                 } 
                 elseif ($cmd == 'BR00' || $cmd == 'BP04') {
-                    // Update lokasi rutin, jangan log sebagai "Reply" agar tidak membingungkan
                     if (preg_match('/[AV](\d+\.\d+)([NS])(\d+\.\d+)([EW])([\d\.]+)/', substr($content, 16), $m)) {
                         $lat = (floatval(substr($m[1], 0, 2)) + (floatval(substr($m[1], 2)) / 60)) * ($m[2] == 'S' ? -1 : 1);
                         $lng = (floatval(substr($m[3], 0, 3)) + (floatval(substr($m[3], 3)) / 60)) * ($m[4] == 'W' ? -1 : 1);
@@ -190,18 +201,19 @@ class GpsServer extends Command
                         DB::table('devices')->where('imei', $device->imei)->update(['acc_status'=>1,'last_online'=>Carbon::now()]);
                         $this->line(self::CLR_SUCC . "   📍 UPDATE: $device->name ($lat, $lng)" . self::CLR_RST);
                     }
-                } else {
-                    // Ini kemungkinan besar balasan teks asli (seperti STATUS#)
-                    $this->line(self::CLR_REPLY . "📩 [TXT REPLY] From $device->name: " . substr($content, 16) . self::CLR_RST);
+                } elseif (!str_contains($content, 'HSO')) {
+                    // Hanya log jika isinya bukan Heartbeat data (HSO)
+                    $this->line(self::CLR_REPLY . "📩 [TXT REPLY] From $device->name: " . substr($content, 12) . self::CLR_RST);
                 }
             }
         }
     }
 
-    private function buildProtocol80($command) {
+    private function buildProtocol80($command, $header = '7878', $serial = 1) {
         $cmdHex = bin2hex($command);
-        $content = "80" . sprintf("%02x", strlen($command) + 4) . "00000000" . $cmdHex . "0001";
-        return "7878" . sprintf("%02x", strlen($content)/2) . $content . $this->getCRC16(sprintf("%02x", strlen($content)/2) . $content) . "0d0a";
+        $content = "80" . sprintf("%02x", strlen($command) + 4) . "00000000" . $cmdHex . sprintf("%04x", $serial);
+        $len = sprintf(($header === '7979' ? "%04x" : "%02x"), strlen($content)/2);
+        return $header . $len . $content . $this->getCRC16($len . $content) . "0d0a";
     }
 
     private function getCRC16($hex) { $data = hex2bin($hex); $crc = 0xFFFF; for ($i = 0; $i < strlen($data); $i++) { $crc ^= ord($data[$i]); for ($j = 0; $j < 8; $j++) { if ($crc & 0x0001) $crc = ($crc >> 1) ^ 0x8408; else $crc >>= 1; } } return sprintf('%04x', ~$crc & 0xFFFF); }
