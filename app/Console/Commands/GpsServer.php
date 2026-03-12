@@ -21,7 +21,7 @@ class GpsServer extends Command
     private $connectionBuffer = [];
 
     // --- Warna ANSI untuk Terminal ---
-    const CLR_RESET = "\e[0m";
+    const CLR_RST   = "\e[0m";   // Memperbaiki dari CLR_RESET ke CLR_RST
     const CLR_GOWA  = "\e[1;36m"; // Cyan
     const CLR_GT06N = "\e[1;36m"; 
     const CLR_KOTA  = "\e[1;33m"; // Kuning
