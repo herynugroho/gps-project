@@ -13,7 +13,7 @@ class GpsServer extends Command
     protected $signature = 'gps:server {port=5022}';
     protected $description = 'GPS Server Optimized for GT06N 4G with Connection State';
 
-    // Map untuk menyimpan IMEI berdasarkan koneksi
+    // Map untuk menyimpan objek device berdasarkan ID koneksi
     private $connectionDeviceMap = [];
 
     public function handle()
@@ -36,8 +36,10 @@ class GpsServer extends Command
             });
 
             $connection->on('close', function() use ($connId) {
+                if (isset($this->connectionDeviceMap[$connId])) {
+                    $this->info("🔌 Connection Closed: " . $this->connectionDeviceMap[$connId]->name);
+                }
                 unset($this->connectionDeviceMap[$connId]);
-                $this->info("🔌 Connection Closed: " . $connId);
             });
         });
 
@@ -64,7 +66,7 @@ class GpsServer extends Command
         $startBit = substr($hex, 0, 4);
         $is4G = ($startBit === '7979');
         
-        // Offset Protokol ID
+        // Offset Protokol ID: 7878 (posisi 3), 7979 (posisi 4)
         $protocolIdPos = $is4G ? 4 : 3;
         $protocolId = substr($hex, $protocolIdPos * 2, 2);
         
@@ -76,62 +78,60 @@ class GpsServer extends Command
             $terminalId = substr($hex, 8, 16);
             $this->info("🔑 GT06N LOGIN ATTEMPT: " . $terminalId);
 
-            // Cari device berdasarkan Factory ID atau IMEI
             $device = DB::table('devices')
-                ->where('factory_id', 'LIKE', '%' . substr($terminalId, -11))
-                ->orWhere('imei', 'LIKE', '%' . substr($terminalId, -11))
+                ->where('factory_id', 'LIKE', '%' . substr($terminalId, -12))
+                ->orWhere('imei', 'LIKE', '%' . substr($terminalId, -12))
                 ->first();
 
             if ($device) {
                 $this->connectionDeviceMap[$connId] = $device;
                 $this->info("✅ Device Authenticated: " . $device->name);
                 
-                // Response Login (Selalu pakai 7878 untuk handshake)
+                // Response Login (Selalu pakai 7878)
                 $resBody = "0501" . $serialNum;
                 $crc = $this->getCRC16($resBody);
                 $connection->write(hex2bin("7878" . $resBody . $crc . "0d0a"));
+                
+                // Update status online agar dashboard tahu alat sudah 'hidup'
+                $this->updateDeviceStatus($device, 0);
             } else {
                 $this->warn("❌ UNKNOWN DEVICE LOGIN: " . $terminalId);
             }
         } 
         
-        // --- B. DATA PACKETS (22: Lokasi, 94: Informasi Status) ---
-        elseif ($protocolId == '22' || $protocolId == '12' || $protocolId == '94') {
-            // Ambil data device yang sudah tersimpan di memori koneksi
+        // --- B. DATA PACKETS (22: Lokasi, 94: Info Status, 13: Heartbeat) ---
+        else {
             $device = $this->connectionDeviceMap[$connId] ?? null;
-
-            if (!$device) {
-                $this->warn("⚠️ Packet Received but no authenticated device on this connection.");
-                return;
-            }
+            if (!$device) return;
 
             if ($protocolId == '94') {
-                $this->info("📍 Info Packet (94) for " . $device->name);
-                // Jawab ACK khusus 4G (7979)
+                $this->info("📊 Info Packet (94) Received for " . $device->name);
+                // Jawab ACK khusus 4G
                 $resBody = "000594" . $serialNum;
                 $crc = $this->getCRC16($resBody);
                 $connection->write(hex2bin("7979" . $resBody . $crc . "0d0a"));
+                $this->updateDeviceStatus($device, $device->acc_status);
             } 
-            else {
-                $this->info("📍 Location Packet (" . $protocolId . ") for " . $device->name);
+            elseif ($protocolId == '13') {
+                $this->info("💓 Heartbeat Received for " . $device->name);
+                $resBody = "0513" . $serialNum;
+                $connection->write(hex2bin("7878" . $resBody . $this->getCRC16($resBody) . "0d0a"));
+                $this->updateDeviceStatus($device, $device->acc_status);
+            }
+            elseif ($protocolId == '22' || $protocolId == '12') {
+                $this->info("📍 Location Packet Received for " . $device->name);
                 $startOffset = $is4G ? 5 : 4; 
                 $lat = hexdec(substr($hex, ($startOffset + 6) * 2, 8)) / 1800000;
                 $lng = hexdec(substr($hex, ($startOffset + 10) * 2, 8)) / 1800000;
                 $speed = hexdec(substr($hex, ($startOffset + 14) * 2, 2));
 
-                // Ambil ACC dari bit status
+                // Deteksi ACC dari bit status (byte ke-30 pada paket 22 4G)
                 $statusByte = hexdec(substr($hex, ($startOffset + 24) * 2, 2));
                 $accStatus = ($statusByte & 0x02) ? 1 : 0;
 
                 $this->savePosition($device, $lat, $lng, $speed, $accStatus);
-                $this->info("✅ Update Success: " . $device->name);
+                $this->info("✅ Update Success: " . $device->name . " ($lat, $lng)");
             }
-        }
-        
-        // --- C. HEARTBEAT (13) ---
-        elseif ($protocolId == '13') {
-            $resBody = "0513" . $serialNum;
-            $connection->write(hex2bin("7878" . $resBody . $this->getCRC16($resBody) . "0d0a"));
         }
     }
 
@@ -141,7 +141,6 @@ class GpsServer extends Command
         $factoryId = substr($content, 0, 12);
         $cmd = substr($content, 12, 4);
         $data = substr($content, 16);
-
         $device = DB::table('devices')->where('factory_id', $factoryId)->first();
 
         if ($cmd == 'BP05') {
@@ -161,15 +160,24 @@ class GpsServer extends Command
 
     private function savePosition($device, $lat, $lng, $speed, $acc)
     {
-        if ($lat == 0 || $lng == 0) return; // Abaikan jika GPS belum lock (koordinat 0)
+        // Abaikan koordinat 0 (GPS belum lock)
+        if ($lat == 0 || $lng == 0 || abs($lat) > 90 || abs($lng) > 180) return;
 
         $speed = ($speed < 3) ? 0 : $speed;
         DB::table('positions')->insert([
             'imei' => $device->imei, 'latitude' => $lat, 'longitude' => $lng,
             'speed' => $speed, 'gps_time' => Carbon::now(), 'created_at' => Carbon::now()
         ]);
+        
+        $this->updateDeviceStatus($device, $acc);
+    }
+
+    private function updateDeviceStatus($device, $acc)
+    {
         DB::table('devices')->where('imei', $device->imei)->update([
-            'acc_status' => $acc, 'last_online' => Carbon::now(), 'updated_at' => Carbon::now()
+            'acc_status' => $acc,
+            'last_online' => Carbon::now(),
+            'updated_at' => Carbon::now()
         ]);
     }
 
