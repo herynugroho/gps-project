@@ -22,3 +22,6 @@ Route::delete('/devices/{id}', [DashboardController::class, 'destroy'])->name('d
 // History Perjalanan
 Route::get('/device/{imei}/history', [DashboardController::class, 'history'])->name('devices.history');
 Route::get('/api/history/{imei}', [DashboardController::class, 'getHistoryApi']);
+
+Route::get('/api/send-command', [DashboardController::class, 'sendCommand']);
+Route::get('/super-admin', [DashboardController::class, 'super-admin'])->name('command_center');
