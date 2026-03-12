@@ -5,29 +5,25 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use React\Socket\SocketServer;
 use React\Socket\ConnectionInterface;
-use React\Http\HttpServer;
-use React\Http\Message\Response;
-use Psr\Http\Message\ServerRequestInterface;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class GpsServer extends Command
 {
-    // Port 5022 untuk GPS, Port 5023 untuk Jembatan Kontrol dari Dashboard
+    // Port 5022 untuk GPS, Port 5023 untuk Jembatan Kontrol (Internal TCP)
     protected $signature = 'gps:server {port=5022} {control_port=5023}';
-    protected $description = 'Hybrid GPS Server V7.0 - Active Command Bridge Enabled';
+    protected $description = 'Hybrid GPS Server V7.0 - TCP Bridge (No React/HTTP needed)';
 
     private $connectionDeviceMap = []; // Menyimpan IMEI => Objek Koneksi Aktif
     private $connectionBuffer = [];
 
     // --- Warna ANSI untuk Terminal ---
-    const CLR_RST   = "\e[0m";   // Memperbaiki dari CLR_RESET ke CLR_RST
-    const CLR_GOWA  = "\e[1;36m"; // Cyan
-    const CLR_GT06N = "\e[1;36m"; 
-    const CLR_KOTA  = "\e[1;33m"; // Kuning
-    const CLR_SUCC  = "\e[1;32m"; // Hijau
-    const CLR_WARN  = "\e[1;31m"; // Merah
-    const CLR_SYS   = "\e[1;34m"; // Biru
+    const CLR_RST   = "\e[0m";
+    const CLR_GOWA  = "\e[1;36m"; 
+    const CLR_KOTA  = "\e[1;33m"; 
+    const CLR_SUCC  = "\e[1;32m"; 
+    const CLR_WARN  = "\e[1;31m"; 
+    const CLR_SYS   = "\e[1;34m"; 
 
     public function handle()
     {
@@ -52,7 +48,6 @@ class GpsServer extends Command
             });
 
             $connection->on('close', function() use ($connId) {
-                // Bersihkan map saat koneksi putus
                 foreach ($this->connectionDeviceMap as $imei => $conn) {
                     if (spl_object_hash($conn) === $connId) {
                         $this->line(self::CLR_WARN . "🔌 [DISCONNECT] IMEI: $imei" . self::CLR_RST);
@@ -65,42 +60,35 @@ class GpsServer extends Command
         });
 
         // ---------------------------------------------------------
-        // 2. SERVER HTTP UNTUK JEMBATAN KONTROL (PORT 5023)
+        // 2. SERVER SOCKET UNTUK JEMBATAN KONTROL (PORT 5023)
+        // Tanpa library React/HTTP, cuma pakai Socket bawaan React/Socket
         // ---------------------------------------------------------
-        $http = new HttpServer($loop, function (ServerRequestInterface $request) {
-            $path = $request->getUri()->getPath();
-            
-            if ($path === '/send-command') {
-                $params = $request->getQueryParams();
-                $imei = $params['imei'] ?? '';
-                $cmdText = $params['command'] ?? '';
+        $controlSocket = new SocketServer("127.0.0.1:$controlPort", [], $loop);
+        $this->line(self::CLR_SYS . "🌐 TCP CONTROL BRIDGE ACTIVE ON PORT $controlPort" . self::CLR_RST);
 
-                if (isset($this->connectionDeviceMap[$imei])) {
-                    $conn = $this->connectionDeviceMap[$imei];
-                    $binaryPacket = $this->buildProtocol80($cmdText);
-                    
-                    $conn->write(hex2bin($binaryPacket));
-                    
-                    $this->line(self::CLR_SYS . "📤 [GPRS CMD] Sent to $imei: $cmdText" . self::CLR_RST);
-                    return new Response(200, ['Content-Type' => 'application/json'], json_encode([
-                        'status' => 'success', 
-                        'msg' => 'Command sent to device via GPRS connection.'
-                    ]));
+        $controlSocket->on('connection', function (ConnectionInterface $connection) {
+            $connection->on('data', function ($data) use ($connection) {
+                // Format kiriman dari Laravel: IMEI|COMMAND (Contoh: 355228...|STATUS#)
+                $payload = trim($data);
+                if (str_contains($payload, '|')) {
+                    [$imei, $cmdText] = explode('|', $payload, 2);
+
+                    if (isset($this->connectionDeviceMap[$imei])) {
+                        $gpsConn = $this->connectionDeviceMap[$imei];
+                        $binaryPacket = $this->buildProtocol80($cmdText);
+                        
+                        $gpsConn->write(hex2bin($binaryPacket));
+                        $this->line(self::CLR_SYS . "📤 [GPRS CMD] Sent to $imei: $cmdText" . self::CLR_RST);
+                        $connection->write(json_encode(['status' => 'success', 'msg' => 'Command Sent']));
+                    } else {
+                        $connection->write(json_encode(['status' => 'error', 'msg' => 'Device Offline']));
+                    }
                 }
-                
-                return new Response(404, ['Content-Type' => 'application/json'], json_encode([
-                    'status' => 'error', 
-                    'msg' => 'Device is offline or not registered in current session.'
-                ]));
-            }
-            return new Response(404, [], 'Not Found');
+                $connection->end(); // Tutup jembatan setelah perintah diproses
+            });
         });
 
-        $httpSocket = new SocketServer("127.0.0.1:$controlPort", [], $loop);
-        $http->listen($httpSocket);
-        $this->line(self::CLR_SYS . "🌐 CONTROL BRIDGE ACTIVE ON PORT $controlPort" . self::CLR_RST);
         $this->line("-------------------------------------------------------");
-
         $loop->run();
     }
 
@@ -131,7 +119,6 @@ class GpsServer extends Command
         $protocolId = substr($hex, $protocolIdPos * 2, 2);
         $serialNum = substr($hex, strlen($hex) - 12, 4);
         
-        // Cari IMEI di memori atau database
         $currentImei = null;
         foreach($this->connectionDeviceMap as $imei => $conn) {
             if (spl_object_hash($conn) === $connId) { $currentImei = $imei; break; }
@@ -150,11 +137,9 @@ class GpsServer extends Command
             if (!$currentImei) return;
             $device = DB::table('devices')->where('imei', $currentImei)->first();
 
-            // --- LOKASI (22, 12, 16, a0) ---
             if (in_array($protocolId, ['22', '12', '16', 'a0'])) {
                 $latByte = ($is4G && $protocolId == '22') ? 12 : 11;
                 if ($protocolId == '16') $latByte = $is4G ? 13 : 12;
-
                 $timeHex = substr($hex, ($latByte - 7) * 2, 12);
                 $gpsTime = $this->parseGpsTime($timeHex);
                 $latVal = hexdec(substr($hex, $latByte * 2, 8));
@@ -168,11 +153,9 @@ class GpsServer extends Command
                     if ($courseStatus & 0x0800) $lng = -$lng;
                     $statusByte = hexdec(substr($hex, ($latByte + 13) * 2, 2));
                     $acc = ($statusByte & 0x02) ? 1 : 0;
-
                     $this->savePosition($device, $lat, $lng, $speed, $acc, $gpsTime, "BIN");
                 }
             }
-            // --- RESPONSE UNTUK HEARTBEAT & INFO ---
             elseif ($protocolId == '94') {
                 $res = ($is4G ? "79790005" : "787805") . "94" . $serialNum;
                 $connection->write(hex2bin($res . $this->getCRC16(substr($res, 4)) . "0d0a"));
@@ -189,14 +172,9 @@ class GpsServer extends Command
         $serverFlag = "00000000"; 
         $cmdHex = bin2hex($command);
         $cmdLen = strlen($command);
-        
-        // Format: 80 [Len+4] [Flag] [Cmd] [Serial]
         $content = "80" . sprintf("%02x", $cmdLen + 4) . $serverFlag . $cmdHex . "0001";
         $totalLen = strlen($content) / 2;
-        
-        // Start bit 78 78
-        $packet = "7878" . sprintf("%02x", $totalLen) . $content . $this->getCRC16(sprintf("%02x", $totalLen) . $content) . "0d0a";
-        return $packet;
+        return "7878" . sprintf("%02x", $totalLen) . $content . $this->getCRC16(sprintf("%02x", $totalLen) . $content) . "0d0a";
     }
 
     private function handleTextPacket($connection, $text, $connId) {

@@ -83,27 +83,34 @@ class DashboardController extends Controller
         return response()->json($history);
     }
 
-    public function sendCommand(Request $request) {
+     public function sendCommand(Request $request) {
         $imei = $request->query('imei');
         $command = $request->query('command');
 
-        // Menghubungi Bridge HTTP yang ada di GpsServer.php (Port 5023)
-        try {
-            $client = new \GuzzleHttp\Client();
-            $response = $client->request('GET', "http://127.0.0.1:5023/send-command", [
-                'query' => [
-                    'imei' => $imei,
-                    'command' => $command
-                ],
-                'timeout' => 5
-            ]);
+        if (!$imei || !$command) {
+            return response()->json(['status' => 'error', 'msg' => 'Data tidak lengkap']);
+        }
 
-            return response()->json(json_decode($response->getBody()->getContents()));
-        } catch (\Exception $e) {
+        // Buka koneksi TCP langsung ke server GPS (Port 5023)
+        $fp = @fsockopen("127.0.0.1", 5023, $errno, $errstr, 2);
+        
+        if (!$fp) {
             return response()->json([
-                'status' => 'error',
-                'msg' => 'Server GPS tidak merespon bridge kontrol.'
+                'status' => 'error', 
+                'msg' => 'Gagal terhubung ke Bridge GPS: ' . $errstr
             ]);
         }
+
+        // Kirim data dengan format IMEI|COMMAND
+        fwrite($fp, "{$imei}|{$command}");
+        
+        // Baca respon (opsional)
+        $response = fgets($fp, 1024);
+        fclose($fp);
+
+        return response()->json(json_decode($response) ?: [
+            'status' => 'success', 
+            'msg' => 'Perintah telah diteruskan ke socket.'
+        ]);
     }
 }
