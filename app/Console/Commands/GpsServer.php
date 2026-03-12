@@ -11,7 +11,7 @@ use Carbon\Carbon;
 class GpsServer extends Command
 {
     protected $signature = 'gps:server {port=5022}';
-    protected $description = 'Final Hybrid GPS Server V5.2';
+    protected $description = 'Final Hybrid GPS Server with Raw Debugging';
 
     private $connectionDeviceMap = [];
     private $connectionBuffer = [];
@@ -22,18 +22,26 @@ class GpsServer extends Command
         $loop = \React\EventLoop\Factory::create();
         $socket = new SocketServer("0.0.0.0:$port", [], $loop);
 
-        $this->info("🚀 PRIMA GPS HYBRID SERVER V5.2 STARTED ON PORT $port");
+        $this->info("🚀 PRIMA GPS HYBRID SERVER STARTED ON PORT $port");
+        $this->info("-------------------------------------------------------");
 
         $socket->on('connection', function (ConnectionInterface $connection) {
             $connId = spl_object_hash($connection);
             $this->connectionBuffer[$connId] = '';
             
             $connection->on('data', function ($data) use ($connection, $connId) {
-                $this->connectionBuffer[$connId] .= bin2hex($data);
+                $hex = bin2hex($data);
+                // Log mentah setiap data yang masuk untuk debugging
+                $this->info("📥 RAW DATA RECEIVED: " . $hex);
+                
+                $this->connectionBuffer[$connId] .= $hex;
                 $this->processBuffer($connection, $connId);
             });
 
             $connection->on('close', function() use ($connId) {
+                if (isset($this->connectionDeviceMap[$connId])) {
+                    $this->warn("❌ Connection Closed: " . $this->connectionDeviceMap[$connId]->name);
+                }
                 unset($this->connectionDeviceMap[$connId]);
                 unset($this->connectionBuffer[$connId]);
             });
@@ -49,19 +57,31 @@ class GpsServer extends Command
         while (strlen($buffer) >= 4) {
             if (str_starts_with($buffer, '7878') || str_starts_with($buffer, '7979')) {
                 $is4G = str_starts_with($buffer, '7979');
-                $len = $is4G ? hexdec(substr($buffer, 4, 4)) : hexdec(substr($buffer, 4, 2));
-                $totalLenHex = ($len + ($is4G ? 6 : 5)) * 2;
+                
+                if ($is4G) {
+                    if (strlen($buffer) < 8) break;
+                    $len = hexdec(substr($buffer, 4, 4));
+                    $totalLenHex = ($len + 6) * 2;
+                } else {
+                    $len = hexdec(substr($buffer, 4, 2));
+                    $totalLenHex = ($len + 5) * 2;
+                }
+
                 if (strlen($buffer) < $totalLenHex) break;
                 
-                $this->handleBinaryPacket($connection, substr($buffer, 0, $totalLenHex), $connId, $is4G);
+                $packet = substr($buffer, 0, $totalLenHex);
+                $this->handleBinaryPacket($connection, $packet, $connId, $is4G);
                 $buffer = substr($buffer, $totalLenHex);
             } 
             elseif (str_starts_with($buffer, '28')) { // ASCII '('
                 $endPos = strpos($buffer, '29'); // ASCII ')'
                 if ($endPos === false) break;
-                $this->handleTextPacket($connection, hex2bin(substr($buffer, 0, $endPos + 2)), $connId);
+                
+                $packetHex = substr($buffer, 0, $endPos + 2);
+                $this->handleTextPacket($connection, hex2bin($packetHex), $connId);
                 $buffer = substr($buffer, $endPos + 2);
             } else {
+                // Buang byte sampah jika tidak sesuai awalan protokol
                 $buffer = substr($buffer, 2);
             }
         }
@@ -69,6 +89,8 @@ class GpsServer extends Command
 
     private function handleBinaryPacket($connection, $hex, $connId, $is4G)
     {
+        $this->info("📦 Processing " . ($is4G ? "4G" : "2G") . " Packet: " . $hex);
+        
         $protocolIdPos = $is4G ? 4 : 3;
         $protocolId = substr($hex, $protocolIdPos * 2, 2);
         $serialNum = substr($hex, strlen($hex) - 12, 4);
@@ -78,34 +100,60 @@ class GpsServer extends Command
             $device = $this->findDevice($terminalId);
             if ($device) {
                 $this->connectionDeviceMap[$connId] = $device;
-                $this->info("✅ [4G] LOGIN: " . $device->name);
-                $connection->write(hex2bin("78780501" . $serialNum . $this->getCRC16("0501".$serialNum) . "0d0a"));
+                $this->info("✅ Authenticated: " . $device->name);
+                
+                $resBody = "0501" . $serialNum;
+                $response = "7878" . $resBody . $this->getCRC16($resBody) . "0d0a";
+                $connection->write(hex2bin($response));
+                $this->info("📤 Sent Login Response: " . $response);
+                
                 $this->updateStatus($device, 0);
+            } else {
+                $this->warn("⚠️ Unknown Device ID: " . $terminalId);
             }
         } else {
             $device = $this->connectionDeviceMap[$connId] ?? null;
             if (!$device) return;
 
             if ($protocolId == '94') { // INFO
-                $connection->write(hex2bin(($is4G ? "7979" : "7878") . "000594" . $serialNum . $this->getCRC16("000594".$serialNum) . "0d0a"));
+                $this->info("📊 Status Info Packet (94) from " . $device->name);
+                $resBody = "000594" . $serialNum;
+                $startBit = $is4G ? "7979" : "7878";
+                $response = $startBit . $resBody . $this->getCRC16($resBody) . "0d0a";
+                $connection->write(hex2bin($response));
                 $this->updateStatus($device, $device->acc_status);
             } 
             elseif ($protocolId == '13') { // HEARTBEAT
-                $connection->write(hex2bin("78780513" . $serialNum . $this->getCRC16("0513".$serialNum) . "0d0a"));
+                $resBody = "0513" . $serialNum;
+                $response = "7878" . $resBody . $this->getCRC16($resBody) . "0d0a";
+                $connection->write(hex2bin($response));
                 $this->updateStatus($device, $device->acc_status);
             }
             elseif ($protocolId == '22' || $protocolId == '12') { // LOCATION
-                $latByte = $is4G ? 12 : 11; $lngByte = $is4G ? 16 : 15; $spdByte = $is4G ? 20 : 19;
-                $lat = hexdec(substr($hex, $latByte * 2, 8)) / 1800000;
-                $lng = hexdec(substr($hex, $lngByte * 2, 8)) / 1800000;
+                $latByte = $is4G ? 12 : 11; 
+                $lngByte = $is4G ? 16 : 15; 
+                $spdByte = $is4G ? 20 : 19;
+                
+                $latVal = hexdec(substr($hex, $latByte * 2, 8));
+                $lngVal = hexdec(substr($hex, $lngByte * 2, 8));
+                
+                if ($latVal == 0 || $lngVal == 0) {
+                    $this->info("📡 GPS searching for signal on " . $device->name);
+                    return;
+                }
+
+                $lat = $latVal / 1800000;
+                $lng = $lngVal / 1800000;
                 $speed = hexdec(substr($hex, $spdByte * 2, 2));
 
-                // Deteksi ACC dari Status Byte GT06N
+                // Deteksi ACC dari Status Byte GT06N (biasanya 13 byte setelah latByte pada paket 22)
                 $statusByte = hexdec(substr($hex, ($latByte + 13) * 2, 2));
                 $acc = ($statusByte & 0x02) ? 1 : 0;
 
                 $this->savePosition($device, $lat, $lng, $speed, $acc);
-                $this->info("📍 [4G] UPDATE: " . $device->name . " ($lat,$lng)");
+                $this->info("📍 Location Update: " . $device->name . " ($lat,$lng) ACC:" . ($acc ? 'ON':'OFF'));
+            } else {
+                $this->warn("❓ Unhandled Protocol ID [$protocolId] from " . $device->name . ". Full Hex: " . $hex);
             }
         }
     }
@@ -123,7 +171,6 @@ class GpsServer extends Command
                 $this->connectionDeviceMap[$connId] = $device;
                 if ($cmd == 'BP05') {
                     $connection->write("(" . $idInPacket . "AP05)");
-                    $this->info("✅ [TXT] LOGIN: " . $device->name);
                 } 
                 elseif (($cmd == 'BR00' || $cmd == 'BP04')) {
                     if (preg_match('/[AV](\d+\.\d+)([NS])(\d+\.\d+)([EW])([\d\.]+)/', $data, $m)) {
@@ -149,12 +196,23 @@ class GpsServer extends Command
 
     private function savePosition($device, $lat, $lng, $speed, $acc) {
         if ($lat == 0 || $lng == 0) return;
-        DB::table('positions')->insert(['imei'=>$device->imei,'latitude'=>$lat,'longitude'=>$lng,'speed'=>$speed,'gps_time'=>Carbon::now(),'created_at'=>Carbon::now()]);
+        DB::table('positions')->insert([
+            'imei' => $device->imei,
+            'latitude' => $lat,
+            'longitude' => $lng,
+            'speed' => $speed,
+            'gps_time' => Carbon::now(),
+            'created_at' => Carbon::now()
+        ]);
         $this->updateStatus($device, $acc);
     }
 
     private function updateStatus($device, $acc) {
-        DB::table('devices')->where('imei', $device->imei)->update(['acc_status'=>$acc,'last_online'=>Carbon::now(),'updated_at'=>Carbon::now()]);
+        DB::table('devices')->where('imei', $device->imei)->update([
+            'acc_status' => $acc,
+            'last_online' => Carbon::now(),
+            'updated_at' => Carbon::now()
+        ]);
     }
 
     private function getCRC16($hex) {
