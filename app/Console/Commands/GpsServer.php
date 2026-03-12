@@ -166,7 +166,7 @@ class GpsServer extends Command
                 $device = DB::table('devices')->where('imei', $currentImei)->first();
                 if($device) {
                     DB::table('positions')->insert(['imei'=>$device->imei,'latitude'=>$lat,'longitude'=>$lng,'speed'=>hexdec(substr($hex, ($latByte+8)*2, 2)),'gps_time'=>Carbon::now(),'created_at'=>Carbon::now()]);
-                    DB::table('devices')->where('imei', $device->imei)->update(['acc_status'=>($hexdec(substr($hex, ($latByte+13)*2, 2)) & 0x02 ? 1:0),'last_online'=>Carbon::now()]);
+                    DB::table('devices')->where('imei', $device->imei)->update(['acc_status'=>(hexdec(substr($hex, ($latByte+13)*2, 2)) & 0x02 ? 1:0),'last_online'=>Carbon::now()]);
                     $this->line(self::CLR_SUCC . "   📍 UPDATE: $device->name ($lat, $lng)" . self::CLR_RST);
                 }
             }
