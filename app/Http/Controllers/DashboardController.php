@@ -82,4 +82,28 @@ class DashboardController extends Controller
         $history = $query->orderBy('gps_time', 'asc')->get();
         return response()->json($history);
     }
+
+    public function sendCommand(Request $request) {
+        $imei = $request->query('imei');
+        $command = $request->query('command');
+
+        // Menghubungi Bridge HTTP yang ada di GpsServer.php (Port 5023)
+        try {
+            $client = new \GuzzleHttp\Client();
+            $response = $client->request('GET', "http://127.0.0.1:5023/send-command", [
+                'query' => [
+                    'imei' => $imei,
+                    'command' => $command
+                ],
+                'timeout' => 5
+            ]);
+
+            return response()->json(json_decode($response->getBody()->getContents()));
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'msg' => 'Server GPS tidak merespon bridge kontrol.'
+            ]);
+        }
+    }
 }
