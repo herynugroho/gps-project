@@ -11,7 +11,7 @@ use Carbon\Carbon;
 class GpsServer extends Command
 {
     protected $signature = 'gps:server {port=5022}';
-    protected $description = 'Professional Hybrid GPS Server - Prima GPS V5.0';
+    protected $description = 'Professional Hybrid GPS Server - Prima GPS V5.1';
 
     private $connectionDeviceMap = [];
     private $connectionBuffer = [];
@@ -31,7 +31,7 @@ class GpsServer extends Command
         $socket = new SocketServer("0.0.0.0:$port", [], $loop);
 
         $this->line(self::C_CYN . "=======================================================" . self::C_RST);
-        $this->line(self::C_CYN . "📡  PRIMA GPS HYBRID SERVER V5.0 - MONITORING STARTED" . self::C_RST);
+        $this->line(self::C_CYN . "📡  PRIMA GPS HYBRID SERVER V5.1 - MONITORING STARTED" . self::C_RST);
         $this->line(self::C_CYN . "    Port: $port | Mode: Multi-Protocol (4G & Text)" . self::C_RST);
         $this->line(self::C_CYN . "=======================================================" . self::C_RST);
 
@@ -62,7 +62,6 @@ class GpsServer extends Command
         $buffer = &$this->connectionBuffer[$connId];
 
         while (strlen($buffer) >= 4) {
-            // A. Deteksi Paket Biner (7878 / 7979)
             if (str_starts_with($buffer, '7878') || str_starts_with($buffer, '7979')) {
                 $is4G = str_starts_with($buffer, '7979');
                 $len = $is4G ? hexdec(substr($buffer, 4, 4)) : hexdec(substr($buffer, 4, 2));
@@ -74,9 +73,8 @@ class GpsServer extends Command
                 $this->handleBinaryPacket($connection, $packet, $connId, $is4G);
                 $buffer = substr($buffer, $totalLenHex);
             } 
-            // B. Deteksi Paket Teks '(' -> hex 28
             elseif (str_starts_with($buffer, '28')) {
-                $endPos = strpos($buffer, '29'); // ')' -> hex 29
+                $endPos = strpos($buffer, '29');
                 if ($endPos === false) break;
                 
                 $packetHex = substr($buffer, 0, $endPos + 2);
@@ -101,7 +99,8 @@ class GpsServer extends Command
             if ($device) {
                 $this->connectionDeviceMap[$connId] = $device;
                 $this->line(self::C_BLU . "🔑 [4G] LOGIN: " . str_pad($device->name, 10) . " (ID: $terminalId)" . self::C_RST);
-                $connection->write(hex2bin("78780501" . $serialNum . $this->getCRC16("0501".$serialNum) . "0d0a"));
+                $resBody = "0501" . $serialNum;
+                $connection->write(hex2bin("7878" . $resBody . $this->getCRC16($resBody) . "0d0a"));
                 $this->updateStatus($device, 0);
             }
         } else {
@@ -109,21 +108,34 @@ class GpsServer extends Command
             if (!$device) return;
 
             if ($protocolId == '94') { // STATUS/INFO
-                $this->line(self::C_CYN . "📊 [4G] INFO:  " . $device->name . self::C_RST);
-                $connection->write(hex2bin(($is4G ? "7979" : "7878") . "000594" . $serialNum . $this->getCRC16("000594".$serialNum) . "0d0a"));
+                $this->line(self::C_CYN . "📊 [4G] INFO:  " . $device->name . " (Awaiting GPS Fix...)" . self::C_RST);
+                $resBody = "000594" . $serialNum;
+                $connection->write(hex2bin("7979" . $resBody . $this->getCRC16($resBody) . "0d0a"));
                 $this->updateStatus($device, $device->acc_status);
             } 
             elseif ($protocolId == '13') { // HEARTBEAT
-                $connection->write(hex2bin("78780513" . $serialNum . $this->getCRC16("0513".$serialNum) . "0d0a"));
+                $resBody = "0513" . $serialNum;
+                $connection->write(hex2bin("7878" . $resBody . $this->getCRC16($resBody) . "0d0a"));
                 $this->updateStatus($device, $device->acc_status);
             }
             elseif ($protocolId == '22' || $protocolId == '12') { // LOCATION
                 $latByte = $is4G ? 12 : 11; $lngByte = $is4G ? 16 : 15; $spdByte = $is4G ? 20 : 19;
-                $lat = hexdec(substr($hex, $latByte * 2, 8)) / 1800000;
-                $lng = hexdec(substr($hex, $lngByte * 2, 8)) / 1800000;
+                $latVal = hexdec(substr($hex, $latByte * 2, 8));
+                $lngVal = hexdec(substr($hex, $lngByte * 2, 8));
+                
+                if ($latVal == 0 || $lngVal == 0) {
+                    $this->line(self::C_CYN . "📡 [4G] NO FIX: " . $device->name . " (Satellite searching)" . self::C_RST);
+                    $this->updateStatus($device, $device->acc_status);
+                    return;
+                }
+
+                $lat = $latVal / 1800000;
+                $lng = $lngVal / 1800000;
                 $speed = hexdec(substr($hex, $spdByte * 2, 2));
                 
                 $this->savePosition($device, $lat, $lng, $speed, ($speed > 2 ? 1 : 0), "4G");
+            } else {
+                $this->line(self::C_RED . "❓ [4G] UNKNOWN PROTOCOL: $protocolId from " . $device->name . self::C_RST);
             }
         }
     }
@@ -147,14 +159,12 @@ class GpsServer extends Command
                     $this->updateStatus($device, 0);
                 } 
                 elseif (($cmd == 'BR00' || $cmd == 'BP04')) { // LOCATION
-                    // Regex diperbaiki agar lebih fleksibel mencari status A/V
                     if (preg_match('/[AV](\d+\.\d+)([NS])(\d+\.\d+)([EW])([\d\.]+)/', $data, $m)) {
                         $lat = $this->dmToDecimal($m[1]) * ($m[2] == 'S' ? -1 : 1);
                         $lng = $this->dmToDecimal($m[3]) * ($m[4] == 'W' ? -1 : 1);
                         $speed = floatval($m[5]) * 1.852;
                         $this->savePosition($device, $lat, $lng, $speed, ($speed > 5 ? 1 : 0), "TXT");
                         
-                        // Balas sesuai perintah
                         $resCmd = ($cmd == 'BR00') ? "AR00" : "AP04";
                         $connection->write("(" . $idInPacket . $resCmd . ")");
                     }
@@ -170,7 +180,6 @@ class GpsServer extends Command
     }
 
     private function findDevice($id) {
-        // Ambil 8-10 digit terakhir untuk pencocokan yang agresif
         $shortId = substr($id, -8);
         return DB::table('devices')
             ->where('factory_id', 'LIKE', '%' . $shortId)
@@ -179,17 +188,11 @@ class GpsServer extends Command
     }
 
     private function savePosition($device, $lat, $lng, $speed, $acc, $type) {
-        if ($lat == 0 || $lng == 0) return;
-        
         $speed = ($speed < 3) ? 0 : $speed;
         
         DB::table('positions')->insert([
-            'imei' => $device->imei, 
-            'latitude' => $lat, 
-            'longitude' => $lng, 
-            'speed' => $speed, 
-            'gps_time' => Carbon::now(), 
-            'created_at' => Carbon::now()
+            'imei' => $device->imei, 'latitude' => $lat, 'longitude' => $lng, 
+            'speed' => $speed, 'gps_time' => Carbon::now(), 'created_at' => Carbon::now()
         ]);
         
         $this->updateStatus($device, $acc);
@@ -200,9 +203,7 @@ class GpsServer extends Command
 
     private function updateStatus($device, $acc) {
         DB::table('devices')->where('imei', $device->imei)->update([
-            'acc_status' => $acc, 
-            'last_online' => Carbon::now(), 
-            'updated_at' => Carbon::now()
+            'acc_status' => $acc, 'last_online' => Carbon::now(), 'updated_at' => Carbon::now()
         ]);
     }
 
