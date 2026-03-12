@@ -8,99 +8,74 @@ use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
-    public function index()
-    {
+    public function index() {
         return view('dashboard');
     }
 
-    public function getApiData()
-    {
+    public function getApiData() {
+        // Mengambil data device beserta status ACC terbaru
         $devices = DB::table('devices')
-            ->select('devices.*', 'positions.latitude', 'positions.longitude', 'positions.speed', 'positions.course', 'positions.gps_time')
+            ->select('devices.*', 'positions.latitude', 'positions.longitude', 'positions.speed', 'positions.gps_time')
             ->leftJoin('positions', function ($join) {
                 $join->on('devices.imei', '=', 'positions.imei')
                      ->whereRaw('positions.id IN (select MAX(id) from positions group by imei)');
-            })
-            ->get();
-
+            })->get();
         return response()->json($devices);
     }
 
-    // Manajemen Kendaraan
-    public function listDevices()
-    {
+    public function listDevices() {
         $devices = DB::table('devices')->orderBy('created_at', 'desc')->paginate(10);
         return view('devices.index', compact('devices'));
     }
 
-    public function create()
-    {
+    public function create() {
         return view('devices.create');
     }
 
-    public function store(Request $request)
-    {
+    public function store(Request $request) {
         $request->validate([
             'imei' => 'required|numeric|unique:devices,imei',
-            'name' => 'required|string',
-            'plate_number' => 'required|string',
+            'name' => 'required',
+            'plate_number' => 'required',
+            'module_type' => 'required' // Parameter baru
         ]);
 
         DB::table('devices')->insert([
             'imei' => $request->imei,
             'name' => $request->name,
             'plate_number' => $request->plate_number,
+            'module_type' => $request->module_type,
+            'acc_status' => 0,
+            'fuel_status' => 1,
             'created_at' => Carbon::now(),
             'updated_at' => Carbon::now(),
         ]);
 
-        return redirect()->route('devices.index')->with('success', 'Kendaraan berhasil ditambahkan!');
+        return redirect()->route('devices.index')->with('success', 'Perangkat berhasil ditambahkan!');
     }
 
-    public function destroy($id)
-    {
+    public function destroy($id) {
         DB::table('devices')->where('id', $id)->delete();
-        return redirect()->route('devices.index')->with('success', 'Kendaraan berhasil dihapus.');
+        return redirect()->route('devices.index')->with('success', 'Perangkat berhasil dihapus.');
     }
 
-    // History Perjalanan
-    public function history($imei)
-    {
+    public function history($imei) {
         $device = DB::table('devices')->where('imei', $imei)->first();
         if (!$device) abort(404);
         return view('history', compact('device'));
     }
 
-    public function getHistoryApi(Request $request, $imei)
-    {
+    public function getHistoryApi(Request $request, $imei) {
         $range = $request->query('range', 'today');
+        $query = DB::table('positions')->where('imei', $imei);
 
-        // 1. Cari Factory ID dari device ini dulu
-        $device = DB::table('devices')->where('imei', $imei)->first();
-        if (!$device || !$device->factory_id) {
-            return response()->json([]);
-        }
-
-        // 2. Tarik posisi berdasarkan factory_id (lebih akurat daripada IMEI jika ada data lama yang nyampur)
-        // Kita join dengan tabel devices untuk memastikan kita hanya ambil data milik alat ini
-        $query = DB::table('positions')
-            ->join('devices', 'positions.imei', '=', 'devices.imei')
-            ->where('devices.factory_id', $device->factory_id)
-            ->whereNotNull('latitude')
-            ->whereNotNull('longitude');
-
-        // 3. Filter Waktu
         if ($range === 'week') {
-            $query->where('positions.gps_time', '>=', Carbon::now()->startOfWeek());
+            $query->where('gps_time', '>=', Carbon::now()->startOfWeek());
         } else {
-            $query->where('positions.gps_time', '>=', Carbon::today());
+            $query->where('gps_time', '>=', Carbon::today());
         }
 
-        // 4. PENTING: Urutkan berdasarkan waktu terkecil ke terbesar
-        $history = $query->orderBy('positions.gps_time', 'asc')
-                         ->select('positions.*')
-                         ->get();
-
+        $history = $query->orderBy('gps_time', 'asc')->get();
         return response()->json($history);
     }
 }

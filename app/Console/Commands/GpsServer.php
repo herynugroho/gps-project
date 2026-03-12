@@ -11,7 +11,7 @@ use Carbon\Carbon;
 class GpsServer extends Command
 {
     protected $signature = 'gps:server {port=5022}';
-    protected $description = 'Start TCP Server with Distance-based Filtering';
+    protected $description = 'Multi-Protocol Server for Standard and GT06N 4G';
 
     public function handle()
     {
@@ -19,18 +19,18 @@ class GpsServer extends Command
         $loop = \React\EventLoop\Factory::create();
         $socket = new SocketServer("0.0.0.0:$port", [], $loop);
 
-        $this->info("🚀 GPS SERVER ANTI-JITTER STARTED ON PORT $port");
+        $this->info("🚀 PRIMA GPS MULTI-MODULE SERVER STARTED ON PORT $port");
 
         $socket->on('connection', function (ConnectionInterface $connection) {
             $connection->on('data', function ($data) use ($connection) {
-                $this->processPacket($connection, bin2hex($data), trim($data));
+                $this->processPacket($connection, trim($data));
             });
         });
 
         $loop->run();
     }
 
-    private function processPacket($connection, $hexData, $textData)
+    private function processPacket($connection, $textData)
     {
         if (str_starts_with($textData, '(') && str_ends_with($textData, ')')) {
             $content = substr($textData, 1, -1);
@@ -38,60 +38,67 @@ class GpsServer extends Command
             $cmd = substr($content, 12, 4);
             $data = substr($content, 16);
 
+            $device = DB::table('devices')->where('factory_id', $factoryId)->first();
+
+            // 1. LOGIN
             if ($cmd == 'BP05') {
                 $imei = substr($data, 0, 15);
                 DB::table('devices')->where('imei', $imei)->update(['factory_id' => $factoryId]);
                 $connection->write("(" . $factoryId . "AP05)");
-            }
-
+                $this->info("🔑 Login: $imei");
+            } 
+            
+            // 2. LOKASI & STATUS
             elseif ($cmd == 'BR00' || $cmd == 'BP04') {
                 if (preg_match('/([AV])(\d+\.\d+)([NS])(\d+\.\d+)([EW])([\d\.]+)/', $data, $matches)) {
-                    if ($matches[1] == 'A') {
-                        $lat = $this->dmToDecimal($matches[2]);
-                        if ($matches[3] == 'S') $lat *= -1;
-                        $lng = $this->dmToDecimal($matches[4]);
-                        if ($matches[5] == 'W') $lng *= -1;
-                        $speed = floatval($matches[6]) * 1.852;
+                    $lat = $this->dmToDecimal($matches[2]);
+                    if ($matches[3] == 'S') $lat *= -1;
+                    $lng = $this->dmToDecimal($matches[4]);
+                    if ($matches[5] == 'W') $lng *= -1;
+                    $speed = floatval($matches[6]) * 1.852;
+                    if ($speed < 3) $speed = 0;
 
-                        $device = DB::table('devices')->where('factory_id', $factoryId)->first();
-                        if ($device) {
-                            $lastPos = DB::table('positions')->where('imei', $device->imei)->orderBy('id', 'desc')->first();
-                            
-                            $shouldInsert = true;
-                            if ($lastPos) {
-                                $dist = $this->calculateDistance($lastPos->latitude, $lastPos->longitude, $lat, $lng);
-                                $timeSinceLastSaved = Carbon::now()->diffInMinutes(Carbon::parse($lastPos->gps_time));
+                    if ($device) {
+                        // --- LOGIKA DETEKSI ACC CERDAS ---
+                        $accStatus = 0;
+                        if ($device->module_type === 'GT06N') {
+                            // Untuk GT06N: Cek indikator "ACC ON" dalam paket atau status bit
+                            // Protokol GT06N biasanya mengirim status bit di akhir string BR00/BP04
+                            $accStatus = (str_contains($data, 'ACC ON') || $speed > 5) ? 1 : 0;
+                        } else {
+                            // Untuk Modul Standar: ACC hanya berdasarkan pergerakan (speed)
+                            $accStatus = ($speed > 5) ? 1 : 0;
+                        }
 
-                                $shouldInsert = true;
-                                
-                                // JANGAN SIMPAN JIKA:
-                                // 1. Jarak < 20 meter DAN Speed < 3 km/h
-                                // 2. KECUALI sudah lebih dari 5 menit sejak data terakhir disimpan (Keep-alive data)
-                                if ($dist < 20 && $speed < 3 && $timeSinceLastSaved < 5) {
-                                    $shouldInsert = false;
-                                }
+                        // Filtering Data
+                        $lastPos = DB::table('positions')->where('imei', $device->imei)->orderBy('id', 'desc')->first();
+                        $shouldInsert = true;
+                        if ($lastPos) {
+                            $dist = $this->calculateDistance($lastPos->latitude, $lastPos->longitude, $lat, $lng);
+                            if ($dist < 30 && $speed == 0 && Carbon::now()->diffInMinutes(Carbon::parse($lastPos->gps_time)) < 5) {
+                                $shouldInsert = false;
                             }
+                        }
 
-                            if ($shouldInsert) {
-                                DB::table('positions')->insert([
-                                    'imei' => $device->imei,
-                                    'latitude' => $lat, 'longitude' => $lng, 'speed' => $speed,
-                                    'gps_time' => Carbon::now(), 'created_at' => Carbon::now()
-                                ]);
-                                $this->info("📍 [MOVE] $device->name: $dist m | $speed km/h");
-                            } else {
-                                $this->info("💤 [STAY] $device->name: diam di radius aman.");
-                            }
-
-                            DB::table('devices')->where('imei', $device->imei)->update([
-                                'last_online' => Carbon::now(), 'updated_at' => Carbon::now()
+                        if ($shouldInsert) {
+                            DB::table('positions')->insert([
+                                'imei' => $device->imei, 'latitude' => $lat, 'longitude' => $lng, 
+                                'speed' => $speed, 'gps_time' => Carbon::now(), 'created_at' => Carbon::now()
                             ]);
                         }
+
+                        // Update Status Mesin & Online di tabel Devices
+                        DB::table('devices')->where('imei', $device->imei)->update([
+                            'acc_status' => $accStatus,
+                            'last_online' => Carbon::now(),
+                            'updated_at' => Carbon::now()
+                        ]);
+                        
+                        $this->info("📍 Update: " . ($device->name) . " | ACC: " . ($accStatus ? 'ON' : 'OFF'));
                     }
                     $connection->write("(" . $factoryId . ($cmd == 'BR00' ? "AR00" : "AP04") . ")");
                 }
             }
-            elseif ($cmd == 'BZ00') $connection->write("(" . $factoryId . "AZ00)");
             elseif ($cmd == 'BP00') $connection->write("(" . $factoryId . "AP00)");
         }
     }
@@ -99,14 +106,11 @@ class GpsServer extends Command
     private function calculateDistance($lat1, $lon1, $lat2, $lon2) {
         $theta = $lon1 - $lon2;
         $dist = sin(deg2rad($lat1)) * sin(deg2rad($lat2)) + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * cos(deg2rad($theta));
-        $dist = acos($dist);
-        $dist = rad2deg($dist);
-        return $dist * 60 * 1.1515 * 1.609344 * 1000; // Hasil dalam METER
+        return rad2deg(acos($dist)) * 60 * 1.1515 * 1.609344 * 1000;
     }
 
     private function dmToDecimal($dm) {
         $dotPos = strpos($dm, '.');
-        if ($dotPos === false) return 0;
         return floatval(substr($dm, 0, $dotPos - 2)) + (floatval(substr($dm, $dotPos - 2)) / 60);
     }
 }
