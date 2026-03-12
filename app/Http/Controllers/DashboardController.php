@@ -12,6 +12,10 @@ class DashboardController extends Controller
         return view('dashboard');
     }
 
+    public function super_admin() {
+        return view('command_center');
+    }
+
     public function getApiData() {
         // Mengambil data device beserta status ACC terbaru
         $devices = DB::table('devices')
