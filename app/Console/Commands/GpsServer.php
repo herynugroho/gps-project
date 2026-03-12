@@ -10,18 +10,16 @@ use Carbon\Carbon;
 
 class GpsServer extends Command
 {
-    // Port 5022 untuk GPS, Port 5023 untuk Jembatan Kontrol (Internal TCP)
     protected $signature = 'gps:server {port=5022} {control_port=5023}';
-    protected $description = 'Hybrid GPS Server V7.0 - TCP Bridge (No React/HTTP needed)';
+    protected $description = 'Hybrid GPS Server V7.1 - Visible Command Replies';
 
-    private $connectionDeviceMap = []; // Menyimpan IMEI => Objek Koneksi Aktif
+    private $connectionDeviceMap = []; 
     private $connectionBuffer = [];
 
-    // --- Warna ANSI untuk Terminal ---
     const CLR_RST   = "\e[0m";
     const CLR_GOWA  = "\e[1;36m"; 
-    const CLR_KOTA  = "\e[1;33m"; 
     const CLR_SUCC  = "\e[1;32m"; 
+    const CLR_REPLY = "\e[1;32;40m"; // Hijau dengan background hitam untuk balasan
     const CLR_WARN  = "\e[1;31m"; 
     const CLR_SYS   = "\e[1;34m"; 
 
@@ -31,9 +29,7 @@ class GpsServer extends Command
         $controlPort = $this->argument('control_port');
         $loop = \React\EventLoop\Factory::create();
 
-        // ---------------------------------------------------------
-        // 1. SERVER SOCKET UNTUK PENERIMA DATA GPS (PORT 5022)
-        // ---------------------------------------------------------
+        // 1. GPS RECEIVER (5022)
         $socket = new SocketServer("0.0.0.0:$port", [], $loop);
         $this->line(self::CLR_SYS . "📡 GPS SOCKET RECEIVER STARTED ON PORT $port" . self::CLR_RST);
 
@@ -42,8 +38,7 @@ class GpsServer extends Command
             $this->connectionBuffer[$connId] = '';
             
             $connection->on('data', function ($data) use ($connection, $connId) {
-                $hex = bin2hex($data);
-                $this->connectionBuffer[$connId] .= $hex;
+                $this->connectionBuffer[$connId] .= bin2hex($data);
                 $this->processBuffer($connection, $connId);
             });
 
@@ -59,36 +54,28 @@ class GpsServer extends Command
             });
         });
 
-        // ---------------------------------------------------------
-        // 2. SERVER SOCKET UNTUK JEMBATAN KONTROL (PORT 5023)
-        // Tanpa library React/HTTP, cuma pakai Socket bawaan React/Socket
-        // ---------------------------------------------------------
+        // 2. TCP BRIDGE (5023)
         $controlSocket = new SocketServer("127.0.0.1:$controlPort", [], $loop);
         $this->line(self::CLR_SYS . "🌐 TCP CONTROL BRIDGE ACTIVE ON PORT $controlPort" . self::CLR_RST);
 
         $controlSocket->on('connection', function (ConnectionInterface $connection) {
             $connection->on('data', function ($data) use ($connection) {
-                // Format kiriman dari Laravel: IMEI|COMMAND (Contoh: 355228...|STATUS#)
                 $payload = trim($data);
                 if (str_contains($payload, '|')) {
                     [$imei, $cmdText] = explode('|', $payload, 2);
-
                     if (isset($this->connectionDeviceMap[$imei])) {
                         $gpsConn = $this->connectionDeviceMap[$imei];
-                        $binaryPacket = $this->buildProtocol80($cmdText);
-                        
-                        $gpsConn->write(hex2bin($binaryPacket));
+                        $gpsConn->write(hex2bin($this->buildProtocol80($cmdText)));
                         $this->line(self::CLR_SYS . "📤 [GPRS CMD] Sent to $imei: $cmdText" . self::CLR_RST);
-                        $connection->write(json_encode(['status' => 'success', 'msg' => 'Command Sent']));
+                        $connection->write(json_encode(['status' => 'success']));
                     } else {
-                        $connection->write(json_encode(['status' => 'error', 'msg' => 'Device Offline']));
+                        $connection->write(json_encode(['status' => 'error', 'msg' => 'Offline']));
                     }
                 }
-                $connection->end(); // Tutup jembatan setelah perintah diproses
+                $connection->end();
             });
         });
 
-        $this->line("-------------------------------------------------------");
         $loop->run();
     }
 
@@ -115,8 +102,7 @@ class GpsServer extends Command
 
     private function handleBinaryPacket($connection, $hex, $connId, $is4G)
     {
-        $protocolIdPos = $is4G ? 4 : 3;
-        $protocolId = substr($hex, $protocolIdPos * 2, 2);
+        $protocolId = substr($hex, ($is4G ? 4 : 3) * 2, 2);
         $serialNum = substr($hex, strlen($hex) - 12, 4);
         
         $currentImei = null;
@@ -124,113 +110,75 @@ class GpsServer extends Command
             if (spl_object_hash($conn) === $connId) { $currentImei = $imei; break; }
         }
 
-        if ($protocolId == '01') { // LOGIN
+        // --- LOGIN ---
+        if ($protocolId == '01') {
             $terminalId = substr($hex, 8, 16);
-            $device = $this->findDevice($terminalId);
+            $device = DB::table('devices')->where('factory_id', 'LIKE', '%' . substr($terminalId, -8))->orWhere('imei', 'LIKE', '%' . substr($terminalId, -8))->first();
             if ($device) {
                 $this->connectionDeviceMap[$device->imei] = $connection;
-                $this->line(self::CLR_SUCC . "✅ [ONLINE] " . $device->name . " (IMEI: $device->imei)" . self::CLR_RST);
+                $this->line(self::CLR_SUCC . "✅ [ONLINE] " . $device->name . " ($device->imei)" . self::CLR_RST);
                 $connection->write(hex2bin("78780501" . $serialNum . $this->getCRC16("0501".$serialNum) . "0d0a"));
-                $this->updateStatus($device, 0);
             }
-        } else {
-            if (!$currentImei) return;
-            $device = DB::table('devices')->where('imei', $currentImei)->first();
-
-            if (in_array($protocolId, ['22', '12', '16', 'a0'])) {
-                $latByte = ($is4G && $protocolId == '22') ? 12 : 11;
-                if ($protocolId == '16') $latByte = $is4G ? 13 : 12;
-                $timeHex = substr($hex, ($latByte - 7) * 2, 12);
-                $gpsTime = $this->parseGpsTime($timeHex);
-                $latVal = hexdec(substr($hex, $latByte * 2, 8));
-                $lngVal = hexdec(substr($hex, ($latByte + 4) * 2, 8));
-
-                if ($latVal > 0 && $lngVal > 0) {
-                    $lat = $latVal / 1800000; $lng = $lngVal / 1800000;
-                    $speed = hexdec(substr($hex, ($latByte + 8) * 2, 2));
-                    $courseStatus = hexdec(substr($hex, ($latByte + 9) * 2, 4));
-                    if (!($courseStatus & 0x0400)) $lat = -$lat;
-                    if ($courseStatus & 0x0800) $lng = -$lng;
-                    $statusByte = hexdec(substr($hex, ($latByte + 13) * 2, 2));
-                    $acc = ($statusByte & 0x02) ? 1 : 0;
-                    $this->savePosition($device, $lat, $lng, $speed, $acc, $gpsTime, "BIN");
+        } 
+        // --- BALASAN PERINTAH (Protocol 21 / 15 Hex) ---
+        elseif ($protocolId == '21' || $protocolId == '15') {
+            $lenContent = hexdec(substr($hex, 8, 2));
+            $contentHex = substr($hex, 18, ($lenContent - 4) * 2); // Abaikan Flag 4 byte
+            $replyText = hex2bin($contentHex);
+            $this->line(self::CLR_REPLY . "📩 [REPLY] From " . ($currentImei ?? 'Unknown') . ": " . $replyText . self::C_RST);
+        }
+        // --- LOKASI ---
+        elseif (in_array($protocolId, ['22', '12', '16', 'a0'])) {
+            $latByte = ($is4G && $protocolId == '22') ? 12 : 11;
+            if ($protocolId == '16') $latByte = $is4G ? 13 : 12;
+            $latVal = hexdec(substr($hex, $latByte * 2, 8));
+            $lngVal = hexdec(substr($hex, ($latByte + 4) * 2, 8));
+            if ($latVal > 0) {
+                $lat = $latVal / 1800000; $lng = $lngVal / 1800000;
+                $courseStatus = hexdec(substr($hex, ($latByte + 9) * 2, 4));
+                if (!($courseStatus & 0x0400)) $lat = -$lat;
+                if ($courseStatus & 0x0800) $lng = -$lng;
+                $statusByte = hexdec(substr($hex, ($latByte + 13) * 2, 2));
+                $acc = ($statusByte & 0x02) ? 1 : 0;
+                
+                $device = DB::table('devices')->where('imei', $currentImei)->first();
+                if($device) {
+                    DB::table('positions')->insert(['imei'=>$device->imei,'latitude'=>$lat,'longitude'=>$lng,'speed'=>hexdec(substr($hex, ($latByte+8)*2, 2)),'gps_time'=>Carbon::now(),'created_at'=>Carbon::now()]);
+                    DB::table('devices')->where('imei', $device->imei)->update(['acc_status'=>$acc,'last_online'=>Carbon::now()]);
+                    $this->line(self::CLR_SUCC . "   📍 UPDATE: $device->name ($lat, $lng) ACC: ".($acc?'ON':'OFF') . self::CLR_RST);
                 }
             }
-            elseif ($protocolId == '94') {
-                $res = ($is4G ? "79790005" : "787805") . "94" . $serialNum;
-                $connection->write(hex2bin($res . $this->getCRC16(substr($res, 4)) . "0d0a"));
-                $this->updateStatus($device, $device->acc_status);
-            }
-            elseif ($protocolId == '13') {
-                $connection->write(hex2bin("78780513" . $serialNum . $this->getCRC16("0513".$serialNum) . "0d0a"));
-                $this->updateStatus($device, $device->acc_status);
-            }
+        }
+        // --- HEARTBEAT & INFO ---
+        elseif ($protocolId == '94') {
+            $res = ($is4G ? "79790005" : "787805") . "94" . $serialNum;
+            $connection->write(hex2bin($res . $this->getCRC16(substr($res, 4)) . "0d0a"));
+        }
+        elseif ($protocolId == '13') {
+            $connection->write(hex2bin("78780513" . $serialNum . $this->getCRC16("0513".$serialNum) . "0d0a"));
         }
     }
 
     private function buildProtocol80($command) {
-        $serverFlag = "00000000"; 
         $cmdHex = bin2hex($command);
-        $cmdLen = strlen($command);
-        $content = "80" . sprintf("%02x", $cmdLen + 4) . $serverFlag . $cmdHex . "0001";
-        $totalLen = strlen($content) / 2;
-        return "7878" . sprintf("%02x", $totalLen) . $content . $this->getCRC16(sprintf("%02x", $totalLen) . $content) . "0d0a";
+        $content = "80" . sprintf("%02x", strlen($command) + 4) . "00000000" . $cmdHex . "0001";
+        return "7878" . sprintf("%02x", strlen($content)/2) . $content . $this->getCRC16(sprintf("%02x", strlen($content)/2) . $content) . "0d0a";
     }
 
     private function handleTextPacket($connection, $text, $connId) {
         if (preg_match('/\(([^)]+)\)/', $text, $match)) {
             $content = $match[1]; $idInPacket = substr($content, 0, 12);
-            $cmd = substr($content, 12, 4); $data = substr($content, 16);
-            $device = $this->findDevice($idInPacket);
+            $cmd = substr($content, 12, 4);
+            $device = DB::table('devices')->where('factory_id', 'LIKE', '%' . substr($idInPacket, -8))->first();
             if ($device) {
                 $this->connectionDeviceMap[$device->imei] = $connection;
-                if ($cmd == 'BP05') { $connection->write("(" . $idInPacket . "AP05)"); $this->updateStatus($device, 0); } 
-                elseif (($cmd == 'BR00' || $cmd == 'BP04')) {
-                    if (preg_match('/[AV](\d+\.\d+)([NS])(\d+\.\d+)([EW])([\d\.]+)/', $data, $m)) {
-                        $lat = $this->dmToDecimal($m[1]) * ($m[2] == 'S' ? -1 : 1);
-                        $lng = $this->dmToDecimal($m[3]) * ($m[4] == 'W' ? -1 : 1);
-                        $this->savePosition($device, $lat, $lng, floatval($m[5])*1.852, 1, Carbon::now(), "TXT");
-                        $connection->write("(" . $idInPacket . (($cmd == 'BR00') ? "AR00" : "AP04") . ")");
-                    }
+                if ($cmd == 'BP05') { $connection->write("(" . $idInPacket . "AP05)"); } 
+                elseif ($cmd == 'BR00') {
+                    $this->line(self::CLR_REPLY . "📩 [TXT REPLY] From $device->name: " . substr($content, 16) . self::CLR_RST);
                 }
             }
         }
     }
 
-    private function parseGpsTime($hex) {
-        $y = hexdec(substr($hex,0,2)); $m = hexdec(substr($hex,2,2)); $d = hexdec(substr($hex,4,2));
-        $h = hexdec(substr($hex,6,2)); $i = hexdec(substr($hex,8,2)); $s = hexdec(substr($hex,10,2));
-        return Carbon::create(2000+$y, $m, $d, $h, $i, $s, 'UTC');
-    }
-
-    private function findDevice($id) {
-        $shortId = substr($id, -8);
-        return DB::table('devices')->where('factory_id', 'LIKE', '%' . $shortId)->orWhere('imei', 'LIKE', '%' . $shortId)->first();
-    }
-
-    private function savePosition($device, $lat, $lng, $speed, $acc, $time, $source) {
-        DB::table('positions')->insert(['imei'=>$device->imei,'latitude'=>$lat,'longitude'=>$lng,'speed'=>$speed,'gps_time'=>$time,'created_at'=>Carbon::now()]);
-        $this->updateStatus($device, $acc);
-        $this->line(self::CLR_SUCC . "   📍 [$source] UPDATE: $device->name ($lat, $lng)" . self::CLR_RST);
-    }
-
-    private function updateStatus($device, $acc) {
-        DB::table('devices')->where('imei', $device->imei)->update(['acc_status'=>$acc,'last_online'=>Carbon::now(),'updated_at'=>Carbon::now()]);
-    }
-
-    private function getCRC16($hex) {
-        $data = hex2bin($hex); $crc = 0xFFFF;
-        for ($i = 0; $i < strlen($data); $i++) {
-            $crc ^= ord($data[$i]);
-            for ($j = 0; $j < 8; $j++) {
-                if ($crc & 0x0001) $crc = ($crc >> 1) ^ 0x8408; else $crc >>= 1;
-            }
-        }
-        return sprintf('%04x', ~$crc & 0xFFFF);
-    }
-
-    private function dmToDecimal($dm) {
-        $dotPos = strpos($dm, '.');
-        return floatval(substr($dm, 0, $dotPos - 2)) + (floatval(substr($dm, $dotPos - 2)) / 60);
-    }
+    private function getCRC16($hex) { $data = hex2bin($hex); $crc = 0xFFFF; for ($i = 0; $i < strlen($data); $i++) { $crc ^= ord($data[$i]); for ($j = 0; $j < 8; $j++) { if ($crc & 0x0001) $crc = ($crc >> 1) ^ 0x8408; else $crc >>= 1; } } return sprintf('%04x', ~$crc & 0xFFFF); }
 }
