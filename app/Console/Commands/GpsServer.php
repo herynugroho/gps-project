@@ -19,6 +19,7 @@ class GpsServer extends Command
     // --- Warna ANSI untuk Terminal ---
     const CLR_RESET = "\e[0m";
     const CLR_GOWA  = "\e[1;36m"; // Cyan untuk GOWA (4G)
+    const CLR_GT06N = "\e[1;36m"; // Cyan untuk GT06N (Umum)
     const CLR_KOTA  = "\e[1;33m"; // Kuning untuk KOTA (Standard)
     const CLR_SUCC  = "\e[1;32m"; // Hijau untuk Sukses Update
     const CLR_WARN  = "\e[1;31m"; // Merah untuk Peringatan
@@ -31,7 +32,7 @@ class GpsServer extends Command
         $socket = new SocketServer("0.0.0.0:$port", [], $loop);
 
         $this->line(self::CLR_SYS . "=======================================================" . self::CLR_RESET);
-        $this->line(self::CLR_SYS . "📡  PRIMA GPS HYBRID SERVER V6.0 - READY" . self::CLR_RESET);
+        $this->line(self::CLR_SYS . "📡  PRIMA GPS HYBRID SERVER V6.1 - FIXED" . self::CLR_RESET);
         $this->line(self::CLR_SYS . "    Port: $port | Mode: Auto-Switch (4G/2G/Text)" . self::CLR_RESET);
         $this->line(self::CLR_SYS . "=======================================================" . self::CLR_RESET);
 
