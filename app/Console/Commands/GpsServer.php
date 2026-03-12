@@ -24,7 +24,6 @@ class GpsServer extends Command
 
         $socket->on('connection', function (ConnectionInterface $connection) {
             $connection->on('data', function ($data) use ($connection) {
-                // Menampilkan log hex agar Bapak bisa memantau data yang masuk
                 $hex = bin2hex($data);
                 $this->info("📥 RAW HEX RECEIVED: " . $hex);
                 
@@ -55,7 +54,7 @@ class GpsServer extends Command
         $startBit = substr($hex, 0, 4);
         $is4G = ($startBit === '7979');
         
-        // Koreksi Offset Protokol:
+        // Offset Protokol:
         // 78 78 [Len] [Prot] -> Index hex 6
         // 79 79 [LenHi] [LenLo] [Prot] -> Index hex 8
         $protocolIdPos = $is4G ? 4 : 3;
@@ -71,48 +70,52 @@ class GpsServer extends Command
 
             $resBody = "0501" . $serialNum;
             $crc = $this->getCRC16($resBody);
-            // Login response selalu pakai 7878 menurut standar Concox
+            // Login response selalu pakai 7878
             $response = hex2bin("7878" . $resBody . $crc . "0d0a");
             $connection->write($response);
             $this->info("📤 SENDING LOGIN RESPONSE: 7878" . $resBody . $crc . "0d0a");
         } 
         
-        // --- B. GPS LOCATION (22, 12, atau 94 untuk 4G) ---
+        // --- B. DATA PACKET (22: Lokasi, 94: Informasi Status) ---
         elseif ($protocolId == '22' || $protocolId == '12' || $protocolId == '94') {
             $this->info("📍 PROCESSING DATA PACKET (" . $protocolId . ")...");
             
-            // Default nilai
             $lat = null; $lng = null; $speed = 0; $accStatus = 0;
 
-            // Jika paket adalah 22 (Lokasi Murni)
+            // Jika paket lokasi (22)
             if ($protocolId == '22' || $protocolId == '12') {
                 $startOffset = $is4G ? 5 : 4; 
                 $lat = hexdec(substr($hex, ($startOffset + 6) * 2, 8)) / 1800000;
                 $lng = hexdec(substr($hex, ($startOffset + 10) * 2, 8)) / 1800000;
                 $speed = hexdec(substr($hex, ($startOffset + 14) * 2, 2));
+                
+                // Status bit biasanya ada di offset tertentu (cek bit ACC)
+                $statusByte = hexdec(substr($hex, ($startOffset + 24) * 2, 2));
+                $accStatus = ($statusByte & 0x02) ? 1 : 0;
             } 
-            // Jika paket adalah 94 (Information Transmission - Sering berisi status)
+            // Jika paket informasi status (94)
             elseif ($protocolId == '94') {
-                // Berikan respon ACK agar alat senang dan terus kirim data
+                // Jawab ACK agar alat terus mengirim data lokasi
                 $resBody = "000594" . $serialNum;
                 $crc = $this->getCRC16($resBody);
                 $connection->write(hex2bin($startBit . $resBody . $crc . "0d0a"));
-                
-                // Pada beberapa model 4G, lokasi juga ada di dalam paket 94 ini.
-                // Namun biasanya ia diikuti paket 22. Jika Bapak melihat koordinat 0, 
-                // kita akan bedah lagi offset-nya.
+                $this->info("📤 SENDING ACK FOR 94");
             }
 
-            // Mapping Device
+            // MENCARI DEVICE - Ditingkatkan agar lebih toleran terhadap perbedaan ID
             $terminalId = substr($hex, 8, 16);
             $device = DB::table('devices')
-                ->where('factory_id', 'LIKE', '%' . substr($terminalId, -12))
+                ->where('factory_id', 'LIKE', '%' . substr($terminalId, -11)) // Ambil 11 digit terakhir agar lebih fleksibel
+                ->orWhere('imei', 'LIKE', '%' . substr($terminalId, -11))
                 ->first();
 
             if ($device && $lat && $lng) {
-                $accStatus = ($speed > 5) ? 1 : 0; 
                 $this->savePosition($device, $lat, $lng, $speed, $accStatus);
                 $this->info("✅ SUCCESS: $device->name Berhasil Update!");
+            } elseif ($device && !$lat) {
+                $this->info("ℹ️ Status Update for $device->name (No GPS yet)");
+            } else {
+                $this->warn("⚠️ Device Not Found for ID: " . $terminalId);
             }
         }
         
