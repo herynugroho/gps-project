@@ -18,9 +18,9 @@ class GpsServer extends Command
 
     // --- Warna ANSI untuk Terminal ---
     const CLR_RESET = "\e[0m";
-    const CLR_GT06N = "\e[1;36m"; // Cyan untuk GT06N/4G
-    const CLR_TEXT  = "\e[1;33m"; // Kuning untuk Modul Teks
-    const CLR_SUCC  = "\e[1;32m"; // Hijau untuk Sukses
+    const CLR_GOWA  = "\e[1;36m"; // Cyan untuk GOWA (4G)
+    const CLR_KOTA  = "\e[1;33m"; // Kuning untuk KOTA (Standard)
+    const CLR_SUCC  = "\e[1;32m"; // Hijau untuk Sukses Update
     const CLR_WARN  = "\e[1;31m"; // Merah untuk Peringatan
     const CLR_SYS   = "\e[1;34m"; // Biru untuk Sistem
 
@@ -31,8 +31,8 @@ class GpsServer extends Command
         $socket = new SocketServer("0.0.0.0:$port", [], $loop);
 
         $this->line(self::CLR_SYS . "=======================================================" . self::CLR_RESET);
-        $this->line(self::CLR_SYS . "📡  PRIMA GPS HYBRID SERVER STARTED ON PORT $port" . self::CLR_RESET);
-        $this->line(self::CLR_SYS . "    Mode: Multi-Protocol (Text & Binary GT06N 4G/2G)" . self::CLR_RESET);
+        $this->line(self::CLR_SYS . "📡  PRIMA GPS HYBRID SERVER V6.0 - READY" . self::CLR_RESET);
+        $this->line(self::CLR_SYS . "    Port: $port | Mode: Auto-Switch (4G/2G/Text)" . self::CLR_RESET);
         $this->line(self::CLR_SYS . "=======================================================" . self::CLR_RESET);
 
         $socket->on('connection', function (ConnectionInterface $connection) {
@@ -48,7 +48,7 @@ class GpsServer extends Command
             $connection->on('close', function() use ($connId) {
                 if (isset($this->connectionDeviceMap[$connId])) {
                     $device = $this->connectionDeviceMap[$connId];
-                    $this->line(self::CLR_WARN . "🔌 [DISCONNECTED] " . $device->name . self::CLR_RESET);
+                    $this->line(self::CLR_WARN . "🔌 [DISCONNECT] " . $device->name . self::CLR_RESET);
                 }
                 unset($this->connectionDeviceMap[$connId]);
                 unset($this->connectionBuffer[$connId]);
@@ -66,14 +66,8 @@ class GpsServer extends Command
             if (str_starts_with($buffer, '7878') || str_starts_with($buffer, '7979')) {
                 // --- GT06N / BINARY PROTOCOL ---
                 $is4G = str_starts_with($buffer, '7979');
-                if ($is4G) {
-                    if (strlen($buffer) < 8) break;
-                    $len = hexdec(substr($buffer, 4, 4));
-                    $totalLenHex = ($len + 6) * 2;
-                } else {
-                    $len = hexdec(substr($buffer, 4, 2));
-                    $totalLenHex = ($len + 5) * 2;
-                }
+                $len = $is4G ? hexdec(substr($buffer, 4, 4)) : hexdec(substr($buffer, 4, 2));
+                $totalLenHex = ($len + ($is4G ? 6 : 5)) * 2;
 
                 if (strlen($buffer) < $totalLenHex) break;
                 
@@ -90,7 +84,6 @@ class GpsServer extends Command
                 $this->handleTextPacket($connection, hex2bin($packetHex), $connId);
                 $buffer = substr($buffer, $endPos + 2);
             } else {
-                // Sampah data
                 $buffer = substr($buffer, 2);
             }
         }
@@ -103,35 +96,37 @@ class GpsServer extends Command
         $serialNum = substr($hex, strlen($hex) - 12, 4);
         
         $device = $this->connectionDeviceMap[$connId] ?? null;
-        $deviceName = $device ? $device->name : "Awaiting Login";
+        $deviceName = $device ? $device->name : "Logging In...";
+        $color = ($device && str_contains($device->name, 'GOWA')) ? self::CLR_GOWA : self::CLR_GT06N;
 
-        // Log Raw untuk GT06N sesuai permintaan
-        $this->line(self::CLR_GT06N . "📦 [GT06N " . ($is4G ? "4G" : "2G") . "] Device: $deviceName | Protocol: $protocolId" . self::CLR_RESET);
-        $this->line(self::CLR_GT06N . "   RAW HEX: " . $hex . self::CLR_RESET);
+        // Log khusus untuk GT06N agar mudah dianalisa
+        $this->line($color . "📦 [BIN-" . ($is4G ? "4G" : "2G") . "] " . str_pad($deviceName, 8) . " | Prot: $protocolId" . self::CLR_RESET);
+        $this->line("   RAW: " . $hex);
 
         if ($protocolId == '01') { // LOGIN
             $terminalId = substr($hex, 8, 16);
             $device = $this->findDevice($terminalId);
             if ($device) {
                 $this->connectionDeviceMap[$connId] = $device;
-                $this->line(self::CLR_SUCC . "   ✅ Login Success: " . $device->name . self::CLR_RESET);
+                $this->line(self::CLR_SUCC . "   ✅ Login OK: " . $device->name . self::CLR_RESET);
                 
                 $resBody = "0501" . $serialNum;
                 $response = "7878" . $resBody . $this->getCRC16($resBody) . "0d0a";
                 $connection->write(hex2bin($response));
                 $this->updateStatus($device, 0);
             } else {
-                $this->line(self::CLR_WARN . "   ⚠️ Unknown Device: $terminalId" . self::CLR_RESET);
+                $this->line(self::CLR_WARN . "   ⚠️ Unknown ID: $terminalId" . self::CLR_RESET);
             }
         } else {
             if (!$device) return;
 
-            if ($protocolId == '94') { // INFO
+            if ($protocolId == '94') { // INFO PACKET (Respon harus sesuai tipe start bit)
                 $resBody = "000594" . $serialNum;
                 $startBit = $is4G ? "7979" : "7878";
                 $response = $startBit . $resBody . $this->getCRC16($resBody) . "0d0a";
                 $connection->write(hex2bin($response));
                 $this->updateStatus($device, $device->acc_status);
+                $this->line("   📤 Responded to Info Packet (94)");
             } 
             elseif ($protocolId == '13') { // HEARTBEAT
                 $resBody = "0513" . $serialNum;
@@ -148,7 +143,7 @@ class GpsServer extends Command
                 $lngVal = hexdec(substr($hex, $lngByte * 2, 8));
                 
                 if ($latVal == 0 || $lngVal == 0) {
-                    $this->line(self::CLR_GT06N . "   📡 Searching for satellite fix..." . self::CLR_RESET);
+                    $this->line("   📡 GPS searching...");
                     return;
                 }
 
@@ -159,7 +154,7 @@ class GpsServer extends Command
                 $acc = ($statusByte & 0x02) ? 1 : 0;
 
                 $this->savePosition($device, $lat, $lng, $speed, $acc);
-                $this->line(self::CLR_SUCC . "   📍 Update: $lat, $lng | Speed: $speed | ACC: " . ($acc ? 'ON':'OFF') . self::CLR_RESET);
+                $this->line(self::CLR_SUCC . "   📍 UPDATE: $lat, $lng | SPD: $speed | ACC: " . ($acc ? 'ON':'OFF') . self::CLR_RESET);
             }
         }
     }
@@ -176,10 +171,11 @@ class GpsServer extends Command
 
             if ($device) {
                 $this->connectionDeviceMap[$connId] = $device;
-                $this->line(self::CLR_TEXT . "📝 [TEXT] Device: " . str_pad($device->name, 10) . " | CMD: $cmd" . self::CLR_RESET);
+                $this->line(self::CLR_KOTA . "📝 [TEXT] " . str_pad($device->name, 8) . " | CMD: $cmd" . self::CLR_RESET);
 
                 if ($cmd == 'BP05') {
                     $connection->write("(" . $idInPacket . "AP05)");
+                    $this->updateStatus($device, 0);
                 } 
                 elseif (($cmd == 'BR00' || $cmd == 'BP04')) {
                     if (preg_match('/[AV](\d+\.\d+)([NS])(\d+\.\d+)([EW])([\d\.]+)/', $data, $m)) {
@@ -188,7 +184,7 @@ class GpsServer extends Command
                         $speed = floatval($m[5]) * 1.852;
                         
                         $this->savePosition($device, $lat, $lng, $speed, ($speed > 5 ? 1 : 0));
-                        $this->line(self::CLR_SUCC . "   📍 Update: $lat, $lng | Speed: " . round($speed) . self::CLR_RESET);
+                        $this->line(self::CLR_SUCC . "   📍 UPDATE: $lat, $lng | SPD: " . round($speed) . self::CLR_RESET);
                         
                         $connection->write("(" . $idInPacket . (($cmd == 'BR00') ? "AR00" : "AP04") . ")");
                     }
