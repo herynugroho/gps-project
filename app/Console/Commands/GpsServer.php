@@ -32,7 +32,6 @@ class GpsServer extends Command
             $this->connectionBuffer[$connId] = '';
             
             $connection->on('data', function ($data) use ($connection, $connId) {
-                // Tambahkan data baru ke buffer hex
                 $this->connectionBuffer[$connId] .= bin2hex($data);
                 $this->processBuffer($connection, $connId);
             });
@@ -53,31 +52,28 @@ class GpsServer extends Command
     {
         $buffer = &$this->connectionBuffer[$connId];
 
-        // Cari start bit protokol (7878, 7979, atau teks '(' )
         while (strlen($buffer) >= 4) {
             if (str_starts_with($buffer, '7878')) {
-                // Protokol 2G (GT02 / GT06N 2G)
                 $len = hexdec(substr($buffer, 4, 2));
-                $totalLenHex = ($len + 5) * 2; // Start(2) + Len(1) + Serial(2) + CRC(2) + Stop(2) -> dikali 2 untuk hex
-                if (strlen($buffer) < $totalLenHex) break; // Tunggu data lengkap
+                $totalLenHex = ($len + 5) * 2;
+                if (strlen($buffer) < $totalLenHex) break;
 
                 $packet = substr($buffer, 0, $totalLenHex);
                 $this->handleBinaryPacket($connection, $packet, $connId, false);
                 $buffer = substr($buffer, $totalLenHex);
             } 
             elseif (str_starts_with($buffer, '7979')) {
-                // Protokol 4G (GT06N 4G)
                 if (strlen($buffer) < 8) break;
                 $len = hexdec(substr($buffer, 4, 4));
-                $totalLenHex = ($len + 6) * 2; // Start(2) + Len(2) + Serial(2) + CRC(2) + Stop(2)
+                $totalLenHex = ($len + 6) * 2;
                 if (strlen($buffer) < $totalLenHex) break;
 
                 $packet = substr($buffer, 0, $totalLenHex);
                 $this->handleBinaryPacket($connection, $packet, $connId, true);
                 $buffer = substr($buffer, $totalLenHex);
             }
-            elseif (str_starts_with($buffer, '28')) { // ASCII '('
-                $endPos = strpos($buffer, '29'); // ASCII ')'
+            elseif (str_starts_with($buffer, '28')) {
+                $endPos = strpos($buffer, '29');
                 if ($endPos === false) break;
                 
                 $packetHex = substr($buffer, 0, $endPos + 2);
@@ -85,7 +81,6 @@ class GpsServer extends Command
                 $buffer = substr($buffer, $endPos + 2);
             }
             else {
-                // Buang data sampah di depan jika tidak sesuai start bit
                 $buffer = substr($buffer, 2);
             }
         }
@@ -93,8 +88,6 @@ class GpsServer extends Command
 
     private function handleBinaryPacket($connection, $hex, $connId, $is4G)
     {
-        $this->info("📥 BINARY RECEIVED (" . ($is4G ? "4G" : "2G") . "): " . $hex);
-        
         $protocolIdPos = $is4G ? 4 : 3;
         $protocolId = substr($hex, $protocolIdPos * 2, 2);
         $serialNum = substr($hex, strlen($hex) - 12, 4);
@@ -122,12 +115,19 @@ class GpsServer extends Command
 
             if ($protocolId == '94') {
                 $this->info("📊 Info Packet (94) for " . $device->name);
+                
+                // Dekode data informasi (IMSI, ICCID, dll) untuk logging debug
+                $infoHex = substr($hex, ($protocolIdPos + 1) * 2, (strlen($hex)/2) - ($protocolIdPos + 5));
+                $decodedInfo = @hex2bin($infoHex);
+                if ($decodedInfo) $this->info("   📄 Content: " . substr($decodedInfo, 0, 50) . "...");
+
                 $resBody = "000594" . $serialNum;
                 $startBit = $is4G ? "7979" : "7878";
                 $connection->write(hex2bin($startBit . $resBody . $this->getCRC16($resBody) . "0d0a"));
                 $this->updateDeviceStatus($device, $device->acc_status);
             } 
             elseif ($protocolId == '13') {
+                $this->info("💓 Heartbeat for " . $device->name);
                 $resBody = "0513" . $serialNum;
                 $connection->write(hex2bin("7878" . $resBody . $this->getCRC16($resBody) . "0d0a"));
                 $this->updateDeviceStatus($device, $device->acc_status);
@@ -135,11 +135,6 @@ class GpsServer extends Command
             elseif ($protocolId == '22' || $protocolId == '12') {
                 $this->info("📍 Location Packet Received for " . $device->name);
                 
-                // Koreksi Byte Offset:
-                // 2G: Start(2), Len(1), Prot(1), Time(6), Sat(1), Lat(4), Lng(4), Spd(1)...
-                //     Lat starts at byte 11 (index 22)
-                // 4G: Start(2), Len(2), Prot(1), Time(6), Sat(1), Lat(4), Lng(4), Spd(1)...
-                //     Lat starts at byte 12 (index 24)
                 $latByte = $is4G ? 12 : 11;
                 $lngByte = $is4G ? 16 : 15;
                 $spdByte = $is4G ? 20 : 19;
@@ -148,7 +143,6 @@ class GpsServer extends Command
                 $lng = hexdec(substr($hex, $lngByte * 2, 8)) / 1800000;
                 $speed = hexdec(substr($hex, $spdByte * 2, 2));
 
-                // Deteksi ACC: Sederhana via speed atau status bit jika tersedia
                 $accStatus = ($speed > 2) ? 1 : 0;
 
                 $this->savePosition($device, $lat, $lng, $speed, $accStatus);
