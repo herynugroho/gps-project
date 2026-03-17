@@ -25,3 +25,5 @@ Route::get('/api/history/{imei}', [DashboardController::class, 'getHistoryApi'])
 
 Route::get('/api/send-command', [DashboardController::class, 'sendCommand']);
 Route::get('/super-admin', [DashboardController::class, 'super_admin'])->name('command_center');
+
+Route::post('/proxy-wa', [DashboardController::class, 'sendProxy']);

@@ -113,4 +113,30 @@ class DashboardController extends Controller
             'msg' => 'Perintah telah diteruskan ke socket.'
         ]);
     }
+
+    public function sendProxy(Request $request)
+    {
+        // Validasi input dasar
+        $request->validate([
+            'domain'  => 'required|url',
+            'token'   => 'required|string',
+            'phone'   => 'required|string',
+            'message' => 'required|string',
+        ]);
+
+        $domain = rtrim($request->input('domain'), '/');
+        $url = $domain . '/api/send-message';
+
+        // Tembak API Wablas menggunakan Laravel HTTP Client
+        $response = Http::withHeaders([
+            'Authorization' => $request->input('token'),
+            'Accept'        => 'application/json',
+        ])->post($url, [
+            'phone'   => $request->input('phone'),
+            'message' => $request->input('message'),
+        ]);
+
+        // Kembalikan respons dari Wablas ke frontend GitHub Pages
+        return response()->json($response->json(), $response->status());
+    }
 }
