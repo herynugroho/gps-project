@@ -60,7 +60,7 @@
         </div>
         <div id="map"></div>
 
-        <!-- DETAIL PANEL (Sesuai Gambar User) -->
+        <!-- DETAIL PANEL -->
         <div id="detail-panel" class="absolute bottom-0 left-0 right-0 md:left-auto md:right-6 md:bottom-6 md:w-96 bg-white shadow-2xl p-7 transform translate-y-[120%] rounded-t-[2.5rem] md:rounded-3xl border-t md:border border-slate-100 pb-12 md:pb-7">
             <div class="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-6 md:hidden"></div>
             
@@ -93,7 +93,7 @@
                 </div>
             </div>
 
-            <!-- Box Sinyal Terakhir (Dashed Style) -->
+            <!-- Box Sinyal Terakhir -->
             <div class="border-2 border-dashed border-blue-50 bg-blue-50/20 rounded-2xl p-4 flex justify-between items-center mb-6">
                 <div class="flex items-center gap-3">
                     <i class="fa-solid fa-clock-rotate-left text-blue-400 text-sm"></i>
@@ -123,14 +123,20 @@
 
         function toggleSidebar() { sidebar.classList.toggle('-translate-x-full'); }
 
-        // Fungsi Helper untuk WITA (+8)
+        // FUNGSI BARU: NATIVE WITA MURNI
         function formatWita(gpsTime) {
             if(!gpsTime) return "--:--:-- WITA";
-            // Asumsi database simpan UTC, kita buat objek Date dengan offset Z
-            // Format: YYYY-MM-DD HH:mm:ss -> YYYY-MM-DDTHH:mm:ssZ
-            const isoString = gpsTime.replace(' ', 'T') + 'Z';
-            const date = new Date(isoString);
-            return date.toLocaleTimeString('id-ID', { hour12: false }) + " WITA";
+            
+            // Format DB selalu "YYYY-MM-DD HH:MM:SS"
+            // Kita potong dari karakter indeks ke-11 sebanyak 8 karakter
+            // Contoh: "2026-04-21 16:56:00" -> "16:56:00"
+            // Lalu kita ubah tanda ':' jadi '.' biar estetik (16.56.00 WITA)
+            try {
+                let timeStr = gpsTime.substring(11, 19).replace(/:/g, '.');
+                return timeStr + " WITA";
+            } catch(e) {
+                return "--:--:-- WITA";
+            }
         }
 
         function updateUI() {
@@ -192,7 +198,10 @@
             document.getElementById('det-name').innerText = unit.name;
             document.getElementById('det-plate').innerText = unit.plate_number;
             document.getElementById('det-speed').innerText = Math.round(unit.speed || 0);
+            
+            // Mengirim data dari DB langsung untuk di-format murni WITA
             document.getElementById('det-time').innerText = formatWita(unit.gps_time || unit.last_online);
+            
             document.getElementById('det-module-badge').innerText = unit.module_type === 'GT06N' ? 'GT06N 4G' : 'STANDARD';
             
             const accEl = document.getElementById('det-acc');
