@@ -98,7 +98,6 @@
             <div class="flex-1 lg:hidden"></div>
 
             <!-- BOTTOM SHEET (STATS & DETAILS) -->
-            <!-- FIX: Menambahkan lg:h-full lg:min-h-0 agar panel bisa di-scroll di Desktop -->
             <div class="bg-white pointer-events-auto rounded-t-3xl lg:rounded-none shadow-[0_-15px_30px_rgba(0,0,0,0.15)] lg:shadow-none flex flex-col z-30 transition-all duration-300 h-[45vh] lg:h-full lg:flex-1 lg:min-h-0" id="bottom-sheet">
                 
                 <!-- Handle Pull untuk HP -->
@@ -217,9 +216,6 @@
                 const response = await fetch(url);
                 const rawData = await response.json();
                 
-                // MENGHAPUS FILTER KETAT FRONTEND
-                // Memastikan data apapun yang dikembalikan oleh API untuk tanggal tersebut langsung diproses.
-                // *Pastikan DashboardController Bapak sudah memfilter request->query('date') di backend*
                 let data = rawData;
                 
                 const parkingTable = document.getElementById('parking-list');
@@ -241,7 +237,6 @@
                 data.forEach((p) => {
                     const pos = [parseFloat(p.latitude), parseFloat(p.longitude)];
                     if (lastP) {
-                        // Hilangkan 'Z' agar tidak terkonversi oleh Timezone Browser
                         const t1 = new Date(p.gps_time.replace(' ', 'T')).getTime();
                         const t2 = new Date(lastP.gps_time.replace(' ', 'T')).getTime();
                         const timeDiff = t1 - t2;
@@ -260,7 +255,6 @@
                 pEvents.forEach((evt, i) => {
                     const rowId = `row-${i}`;
                     
-                    // Ekstrak string jam langsung dari DB (Sangat akurat karena DB sudah WITA)
                     const timeLabel = evt.start.substring(11, 16); // Ambil jam "HH:MM"
                     const durLabel = Math.floor(evt.dur/60000) + ' mnt';
                     const latLngLabel = `${parseFloat(evt.lat).toFixed(5)}, <br>${parseFloat(evt.lng).toFixed(5)}`;
@@ -283,13 +277,14 @@
                         icon: L.divIcon({ className: 'parking-marker', html: 'P', iconSize: [22, 22], iconAnchor: [11, 11] })
                     }).addTo(map);
 
+                    // FIX WARNA TEXT LINK MAPS DISINI
                     m.bindPopup(`
                         <div class="p-2 min-w-[130px]">
                             <p class="text-[10px] font-black text-amber-600 uppercase mb-1">AREA PARKIR</p>
                             <p class="text-[11px] font-bold text-slate-800">Mulai: ${timeLabel} WITA</p>
                             <p class="text-[11px] font-bold text-slate-800">Durasi: ${durLabel}</p>
                             <hr class="my-2 border-slate-100">
-                            <a href="${gUrl}" target="_blank" class="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black py-1.5 rounded-lg uppercase">Lihat Google Maps</a>
+                            <a href="${gUrl}" target="_blank" style="color: #ffffff !important; text-decoration: none !important;" class="block w-full text-center bg-blue-600 hover:bg-blue-700 !text-white text-[10px] font-black py-2 rounded-lg uppercase shadow-sm transition-all">Lihat Google Maps</a>
                         </div>
                     `);
                     m.on('click', () => highlightRow(rowId));
@@ -305,7 +300,6 @@
         }
 
         function focusLocation(lat, lng, rowId) { 
-            // Pastikan panel ditarik jika layarnya HP dan sedang menciut
             if(isSheetCollapsed && window.innerWidth < 1024) toggleSheet();
             map.flyTo([lat, lng], 17, { duration: 1.5 }); 
             highlightRow(rowId); 
@@ -316,8 +310,6 @@
             const row = document.getElementById(rowId);
             if (row) { 
                 row.classList.add('highlight-row'); 
-                
-                // Gunakan requestAnimationFrame agar scroll bekerja mulus setelah render
                 requestAnimationFrame(() => {
                     const container = document.getElementById('detail-list-container');
                     const rowTop = row.offsetTop;
