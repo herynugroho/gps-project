@@ -71,20 +71,27 @@ class DashboardController extends Controller
     }
 
     public function getHistoryApi(Request $request, $imei) {
-        $range = $request->query('range', 'today');
         $query = DB::table('positions')->where('imei', $imei);
 
-        if ($range === 'week') {
-            $query->where('gps_time', '>=', Carbon::now()->startOfWeek());
-        } else {
-            $query->where('gps_time', '>=', Carbon::today());
-        }
+        // Pastikan menggunakan zona waktu Makassar agar "Hari Ini" tidak meleset
+        $tz = 'Asia/Makassar'; 
 
+        // 1. Jika mode "Tanggal Spesifik" (?date=...)
         if ($request->has('date')) {
             $query->whereDate('gps_time', $request->date);
+        } 
+        // 2. Jika mode "Rentang Tanggal" (?start=...&end=...)
+        elseif ($request->has('start') && $request->has('end')) {
+            $query->where('gps_time', '>=', $request->start . ' 00:00:00')
+                ->where('gps_time', '<=', $request->end . ' 23:59:59');
+        } 
+        // 3. Default (Mode Hari Ini)
+        else {
+            $query->whereDate('gps_time', \Carbon\Carbon::today($tz));
         }
 
         $history = $query->orderBy('gps_time', 'asc')->get();
+        
         return response()->json($history);
     }
 
