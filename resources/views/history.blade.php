@@ -19,13 +19,51 @@
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .highlight-row { background-color: #fffbeb !important; border-left: 4px solid #f59e0b !important; transition: all 0.3s ease; }
         
+        /* Layout Desktop Split View */
+        @media (min-width: 1024px) {
+            .main-wrapper { flex-direction: row !important; }
+            .side-panel { width: 480px !important; height: 100% !important; max-height: none !important; border-top: none !important; border-right: 1px solid #e2e8f0; order: -1; position: relative !important; }
+            .mobile-only { display: none !important; }
+        }
+
+        /* --- PERBAIKAN MODE CETAK (PRINT) --- */
         @media print {
             .no-print { display: none !important; }
-            #map-container { position: static !important; height: 400px !important; width: 100% !important; flex: none !important; }
-            body { overflow: visible !important; height: auto !important; }
+            
+            /* Peta hanya ambil setengah halaman atas */
+            #map-container { position: static !important; height: 350px !important; width: 100% !important; flex: none !important; margin-bottom: 20px; border: 2px solid #e2e8f0; border-radius: 8px;}
+            
+            /* "Bebaskan" tinggi body agar bisa berhalaman-halaman */
+            body, html { overflow: visible !important; height: auto !important; }
+            
+            /* "Bebaskan" kontainer utama dan sidebar */
+            .main-wrapper, .side-panel { 
+                height: auto !important; 
+                overflow: visible !important; 
+                display: block !important; 
+                width: 100% !important; 
+                position: static !important;
+                box-shadow: none !important;
+                border: none !important;
+            }
+
+            /* "Bebaskan" tabel dari kurungan scroll */
+            #bottom-sheet, #detail-list-container, #detail-list {
+                height: auto !important;
+                max-height: none !important;
+                overflow: visible !important;
+                position: static !important;
+                box-shadow: none !important;
+                border: none !important;
+            }
+
             .print-only { display: block !important; }
-            .report-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            .report-table th, .report-table td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 11px; }
+            
+            /* Styling khusus tabel saat dicetak */
+            .report-table { width: 100%; border-collapse: collapse; margin-top: 20px; page-break-inside: auto; }
+            .report-table tr { page-break-inside: avoid; page-break-after: auto; } /* Cegah baris terpotong antar halaman */
+            .report-table thead { display: table-header-group; } /* Ulangi header tabel di setiap halaman baru */
+            .report-table th, .report-table td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; font-size: 11px; color: #0f172a;}
             .report-header { text-align: center; margin-bottom: 20px; }
         }
         .print-only { display: none; }
@@ -41,18 +79,18 @@
     </div>
 
     <!-- MAIN LAYOUT -->
-    <div class="flex flex-col lg:flex-row h-full w-full overflow-hidden relative">
+    <div class="flex flex-col lg:flex-row h-full w-full overflow-hidden relative main-wrapper">
 
-        <!-- MAP LAYER (Background on Mobile, Right Panel on Desktop) -->
+        <!-- MAP LAYER -->
         <div id="map-container" class="absolute inset-0 lg:relative lg:flex-1 z-0">
             <div id="map" class="w-full h-full"></div>
         </div>
         
         <!-- SIDEBAR / FLOATING PANELS -->
-        <aside class="flex flex-col w-full lg:w-[480px] z-20 shrink-0 lg:h-full lg:shadow-2xl pointer-events-none lg:pointer-events-auto bg-transparent lg:bg-white order-1">
+        <aside class="flex flex-col w-full lg:w-[480px] z-20 shrink-0 lg:h-full lg:shadow-2xl pointer-events-none lg:pointer-events-auto bg-transparent lg:bg-white order-1 side-panel">
             
             <!-- TOP HEADER & FILTER -->
-            <div class="p-4 lg:p-6 bg-slate-900 text-white shrink-0 pointer-events-auto shadow-lg lg:shadow-none z-30">
+            <div class="p-4 lg:p-6 bg-slate-900 text-white shrink-0 pointer-events-auto shadow-lg lg:shadow-none z-30 no-print">
                 <div class="flex items-center justify-between mb-2 lg:mb-6">
                     <div class="flex items-center gap-4">
                         <a href="/" class="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 border border-slate-700 hover:bg-slate-700 transition">
@@ -88,20 +126,17 @@
                     </button>
                 </div>
                 
-                <!-- Toggle Filter Button (Mobile Only) -->
                 <button onclick="document.getElementById('filter-box').classList.toggle('hidden')" class="lg:hidden w-full mt-2 text-[10px] text-slate-400 font-bold uppercase flex justify-center items-center gap-2 border border-slate-700 py-1.5 rounded-lg">
                     <i class="fa-solid fa-filter"></i> Filter Waktu
                 </button>
             </div>
 
-            <!-- Spacer untuk Peta di Mobile (Agar tidak tertutup panel) -->
-            <div class="flex-1 lg:hidden"></div>
+            <div class="flex-1 lg:hidden no-print"></div>
 
             <!-- BOTTOM SHEET (STATS & DETAILS) -->
             <div class="bg-white pointer-events-auto rounded-t-3xl lg:rounded-none shadow-[0_-15px_30px_rgba(0,0,0,0.15)] lg:shadow-none flex flex-col z-30 transition-all duration-300 h-[45vh] lg:h-full lg:flex-1 lg:min-h-0" id="bottom-sheet">
                 
-                <!-- Handle Pull untuk HP -->
-                <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-2 lg:hidden cursor-pointer" onclick="toggleSheet()"></div>
+                <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-2 lg:hidden cursor-pointer no-print" onclick="toggleSheet()"></div>
 
                 <!-- Stats -->
                 <div class="px-4 pb-3 pt-1 lg:p-5 border-b border-slate-100 shrink-0">
@@ -123,8 +158,8 @@
 
                 <!-- List Persinggahan -->
                 <div class="flex-1 overflow-y-auto p-4 lg:p-5 no-scrollbar bg-white lg:min-h-0" id="detail-list-container">
-                    <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Detail Persinggahan</h3>
-                    <div class="overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
+                    <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 no-print">Detail Persinggahan</h3>
+                    <div class="overflow-hidden rounded-2xl border border-slate-100 shadow-sm" id="detail-list">
                         <table class="min-w-full divide-y divide-slate-100 report-table">
                             <thead class="bg-slate-50">
                                 <tr>
@@ -166,9 +201,9 @@
             const sheet = document.getElementById('bottom-sheet');
             isSheetCollapsed = !isSheetCollapsed;
             if(isSheetCollapsed) {
-                sheet.style.maxHeight = "12vh"; // Ciutkan panel
+                sheet.style.maxHeight = "12vh"; 
             } else {
-                sheet.style.maxHeight = "45vh"; // Lebarkan panel
+                sheet.style.maxHeight = "45vh"; 
             }
         }
 
@@ -190,7 +225,6 @@
                 params = `start=${start}&end=${end}`; displayDate = `${start} s/d ${end}`;
             }
 
-            // Hide filter on mobile after clicking
             if(window.innerWidth < 1024) document.getElementById('filter-box').classList.add('hidden');
 
             params += `&_t=${Date.now()}`;
@@ -254,8 +288,7 @@
 
                 pEvents.forEach((evt, i) => {
                     const rowId = `row-${i}`;
-                    
-                    const timeLabel = evt.start.substring(11, 16); // Ambil jam "HH:MM"
+                    const timeLabel = evt.start.substring(11, 16);
                     const durLabel = Math.floor(evt.dur/60000) + ' mnt';
                     const latLngLabel = `${parseFloat(evt.lat).toFixed(5)}, <br>${parseFloat(evt.lng).toFixed(5)}`;
                     const gUrl = `https://www.google.com/maps?q=${evt.lat},${evt.lng}`;
@@ -277,14 +310,13 @@
                         icon: L.divIcon({ className: 'parking-marker', html: 'P', iconSize: [22, 22], iconAnchor: [11, 11] })
                     }).addTo(map);
 
-                    // FIX WARNA TEXT LINK MAPS DISINI
                     m.bindPopup(`
                         <div class="p-2 min-w-[130px]">
                             <p class="text-[10px] font-black text-amber-600 uppercase mb-1">AREA PARKIR</p>
                             <p class="text-[11px] font-bold text-slate-800">Mulai: ${timeLabel} WITA</p>
                             <p class="text-[11px] font-bold text-slate-800">Durasi: ${durLabel}</p>
                             <hr class="my-2 border-slate-100">
-                            <a href="${gUrl}" target="_blank" style="color: #ffffff !important; text-decoration: none !important;" class="block w-full text-center bg-blue-600 hover:bg-blue-700 !text-white text-[10px] font-black py-2 rounded-lg uppercase shadow-sm transition-all">Lihat Google Maps</a>
+                            <a href="${gUrl}" target="_blank" style="color: #ffffff !important; text-decoration: none !important;" class="block w-full text-center bg-blue-600 hover:bg-blue-700 !text-white text-[10px] font-black py-1.5 rounded-lg uppercase shadow-sm transition-all">Lihat Google Maps</a>
                         </div>
                     `);
                     m.on('click', () => highlightRow(rowId));
