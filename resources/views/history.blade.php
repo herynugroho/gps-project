@@ -12,7 +12,6 @@
 
     <style>
         body { font-family: 'Inter', sans-serif; height: 100dvh; margin: 0; display: flex; flex-direction: column; overflow: hidden; }
-        #map { height: 100%; width: 100%; z-index: 1; }
         
         .parking-marker { background: #f59e0b; color: white; border: 2px solid white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.3); font-size: 10px; cursor: pointer; transition: all 0.2s; }
         .parking-marker:hover { transform: scale(1.3); z-index: 1000 !important; background: #d97706; }
@@ -20,16 +19,9 @@
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .highlight-row { background-color: #fffbeb !important; border-left: 4px solid #f59e0b !important; transition: all 0.3s ease; }
         
-        /* Layout Desktop Split View */
-        @media (min-width: 1024px) {
-            .main-wrapper { flex-direction: row !important; }
-            .side-panel { width: 480px !important; height: 100% !important; max-height: none !important; border-top: none !important; border-right: 1px solid #e2e8f0; order: -1; position: relative !important; }
-            .mobile-only { display: none !important; }
-        }
-
         @media print {
             .no-print { display: none !important; }
-            #map { height: 400px !important; width: 100% !important; flex: none !important; }
+            #map-container { position: static !important; height: 400px !important; width: 100% !important; flex: none !important; }
             body { overflow: visible !important; height: auto !important; }
             .print-only { display: block !important; }
             .report-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
@@ -39,7 +31,7 @@
         .print-only { display: none; }
     </style>
 </head>
-<body class="bg-slate-50">
+<body class="bg-slate-50 relative">
 
     <!-- Header Laporan (Cetak) -->
     <div class="print-only report-header">
@@ -48,13 +40,20 @@
         <hr style="margin: 20px 0; border: 1px solid #e2e8f0;">
     </div>
 
-    <div class="main-wrapper flex flex-col flex-1 overflow-hidden">
+    <!-- MAIN LAYOUT -->
+    <div class="flex flex-col lg:flex-row h-full w-full overflow-hidden relative">
+
+        <!-- MAP LAYER (Background on Mobile, Right Panel on Desktop) -->
+        <div id="map-container" class="absolute inset-0 lg:relative lg:flex-1 z-0">
+            <div id="map" class="w-full h-full"></div>
+        </div>
         
-        <!-- SIDEBAR / CONTROL PANEL -->
-        <aside id="side-panel" class="side-panel bg-white shadow-2xl z-20 flex flex-col overflow-hidden">
+        <!-- SIDEBAR / FLOATING PANELS -->
+        <aside class="flex flex-col w-full lg:w-[480px] z-20 shrink-0 lg:h-full lg:shadow-2xl pointer-events-none lg:pointer-events-auto bg-transparent lg:bg-white order-1">
             
-            <div class="p-6 bg-slate-900 text-white shrink-0 no-print">
-                <div class="flex items-center justify-between mb-6">
+            <!-- TOP HEADER & FILTER -->
+            <div class="p-4 lg:p-6 bg-slate-900 text-white shrink-0 pointer-events-auto shadow-lg lg:shadow-none z-30">
+                <div class="flex items-center justify-between mb-2 lg:mb-6">
                     <div class="flex items-center gap-4">
                         <a href="/" class="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 border border-slate-700 hover:bg-slate-700 transition">
                             <i class="fa-solid fa-chevron-left text-sm"></i>
@@ -65,78 +64,85 @@
                         </div>
                     </div>
                     <button onclick="window.print()" class="text-[9px] font-black uppercase bg-slate-800 px-3 py-2 rounded-lg border border-slate-700">
-                        <i class="fa-solid fa-print mr-1"></i> Cetak Laporan
+                        <i class="fa-solid fa-print mr-1"></i> Cetak
                     </button>
                 </div>
 
-                <div class="space-y-4">
-                    <div class="space-y-1">
-                        <label class="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Filter Waktu</label>
-                        <select id="mode-selector" onchange="toggleInputs()" class="w-full bg-slate-800 text-[11px] font-black uppercase px-4 py-3.5 rounded-xl border border-slate-700 outline-none">
-                            <option value="today">Hari Ini</option>
-                            <option value="single">Tanggal Spesifik</option>
-                            <option value="range">Rentang Tanggal</option>
-                        </select>
-                    </div>
+                <!-- Form Filter -->
+                <div class="space-y-3 hidden lg:block mt-4 lg:mt-0" id="filter-box">
+                    <select id="mode-selector" onchange="toggleInputs()" class="w-full bg-slate-800 text-[11px] font-black uppercase px-4 py-3 rounded-xl border border-slate-700 outline-none">
+                        <option value="today">Hari Ini</option>
+                        <option value="single">Tanggal Spesifik</option>
+                        <option value="range">Rentang Tanggal</option>
+                    </select>
 
-                    <div id="filter-inputs" class="space-y-3">
-                        <div id="input-single" class="hidden">
-                            <input type="date" id="date-single" class="w-full bg-slate-800 border border-slate-700 rounded-xl py-3 px-4 text-xs font-bold text-blue-400">
+                    <div id="input-single" class="hidden">
+                        <input type="date" id="date-single" class="w-full bg-slate-800 border border-slate-700 rounded-xl py-2.5 px-4 text-xs font-bold text-blue-400">
+                    </div>
+                    <div id="input-range" class="hidden grid grid-cols-2 gap-2">
+                        <input type="date" id="date-start" class="bg-slate-800 border border-slate-700 rounded-xl py-2.5 px-4 text-xs font-bold text-blue-400">
+                        <input type="date" id="date-end" class="bg-slate-800 border border-slate-700 rounded-xl py-2.5 px-4 text-xs font-bold text-blue-400">
+                    </div>
+                    <button onclick="updateHistory()" id="btn-update" class="w-full bg-blue-600 hover:bg-blue-700 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg">
+                        Tampilkan Riwayat
+                    </button>
+                </div>
+                
+                <!-- Toggle Filter Button (Mobile Only) -->
+                <button onclick="document.getElementById('filter-box').classList.toggle('hidden')" class="lg:hidden w-full mt-2 text-[10px] text-slate-400 font-bold uppercase flex justify-center items-center gap-2 border border-slate-700 py-1.5 rounded-lg">
+                    <i class="fa-solid fa-filter"></i> Filter Waktu
+                </button>
+            </div>
+
+            <!-- Spacer untuk Peta di Mobile (Agar tidak tertutup panel) -->
+            <div class="flex-1 lg:hidden"></div>
+
+            <!-- BOTTOM SHEET (STATS & DETAILS) -->
+            <div class="bg-white pointer-events-auto rounded-t-3xl lg:rounded-none shadow-[0_-15px_30px_rgba(0,0,0,0.15)] lg:shadow-none flex flex-col z-30 transition-all duration-300 h-[45vh] lg:h-auto lg:flex-1" id="bottom-sheet">
+                
+                <!-- Handle Pull untuk HP -->
+                <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-2 lg:hidden cursor-pointer" onclick="toggleSheet()"></div>
+
+                <!-- Stats -->
+                <div class="px-4 pb-3 pt-1 lg:p-5 border-b border-slate-100 shrink-0">
+                    <div class="grid grid-cols-3 gap-2 lg:gap-3">
+                        <div class="bg-slate-50 p-2 lg:p-3.5 rounded-2xl border border-slate-100 text-center">
+                            <p class="text-[8px] text-slate-400 font-black uppercase mb-1 tracking-widest">Sinyal</p>
+                            <p class="font-black text-slate-800 text-sm leading-none" id="stat-points">0</p>
                         </div>
-                        <div id="input-range" class="hidden grid grid-cols-2 gap-2">
-                            <input type="date" id="date-start" class="bg-slate-800 border border-slate-700 rounded-xl py-3 px-4 text-xs font-bold text-blue-400">
-                            <input type="date" id="date-end" class="bg-slate-800 border border-slate-700 rounded-xl py-3 px-4 text-xs font-bold text-blue-400">
+                        <div class="bg-amber-50 p-2 lg:p-3.5 rounded-2xl border border-amber-100 text-center">
+                            <p class="text-[8px] text-amber-500 font-black uppercase mb-1 tracking-widest">Parkir</p>
+                            <p class="font-black text-amber-600 text-sm leading-none" id="stat-parking">0</p>
                         </div>
-                        <button onclick="updateHistory()" id="btn-update" class="w-full bg-blue-600 hover:bg-blue-700 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg">
-                            Tampilkan Riwayat
-                        </button>
+                        <div class="bg-blue-50 p-2 lg:p-3.5 rounded-2xl border border-blue-100 text-center">
+                            <p class="text-[8px] text-blue-500 font-black uppercase mb-1 tracking-widest">Jarak</p>
+                            <p class="font-black text-blue-600 text-sm leading-none"><span id="stat-dist">0</span> <small class="text-[8px]">km</small></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- List Persinggahan -->
+                <div class="flex-1 overflow-y-auto p-4 lg:p-5 no-scrollbar bg-white" id="detail-list-container">
+                    <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Detail Persinggahan</h3>
+                    <div class="overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
+                        <table class="min-w-full divide-y divide-slate-100 report-table">
+                            <thead class="bg-slate-50">
+                                <tr>
+                                    <th class="px-3 py-3 text-left text-[9px] font-black text-slate-400 uppercase">Mulai</th>
+                                    <th class="px-3 py-3 text-left text-[9px] font-black text-slate-400 uppercase">Durasi</th>
+                                    <th class="px-3 py-3 text-left text-[9px] font-black text-slate-400 uppercase">Koordinat</th>
+                                    <th class="px-3 py-3 text-right text-[9px] font-black text-slate-400 uppercase no-print">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="parking-list" class="bg-white divide-y divide-slate-50">
+                                <!-- JS Content -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
 
-            <div class="sticky top-0 bg-white border-b border-slate-100 p-5 z-30 no-print shadow-sm">
-                <div class="grid grid-cols-3 gap-3">
-                    <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 text-center">
-                        <p class="text-[8px] text-slate-400 font-black uppercase mb-1 tracking-widest">Sinyal</p>
-                        <p class="font-black text-slate-800 text-sm leading-none" id="stat-points">0</p>
-                    </div>
-                    <div class="bg-amber-50 p-3.5 rounded-2xl border border-amber-100 text-center">
-                        <p class="text-[8px] text-amber-500 font-black uppercase mb-1 tracking-widest">Parkir</p>
-                        <p class="font-black text-amber-600 text-sm leading-none" id="stat-parking">0</p>
-                    </div>
-                    <div class="bg-blue-50 p-3.5 rounded-2xl border border-blue-100 text-center">
-                        <p class="text-[8px] text-blue-500 font-black uppercase mb-1 tracking-widest">Jarak</p>
-                        <p class="font-black text-blue-600 text-sm leading-none"><span id="stat-dist">0</span> <small class="text-[8px]">km</small></p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="p-5 flex-1 overflow-y-auto no-scrollbar bg-white">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Detail Persinggahan</h3>
-                </div>
-
-                <div id="detail-list" class="overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
-                    <table class="min-w-full divide-y divide-slate-100 report-table">
-                        <thead class="bg-slate-50">
-                            <tr>
-                                <th class="px-4 py-3.5 text-left text-[9px] font-black text-slate-400 uppercase">Mulai (WITA)</th>
-                                <th class="px-4 py-3.5 text-left text-[9px] font-black text-slate-400 uppercase">Durasi</th>
-                                <th class="px-4 py-3.5 text-left text-[9px] font-black text-slate-400 uppercase">Koordinat</th>
-                                <th class="px-4 py-3.5 text-right text-[9px] font-black text-slate-400 uppercase no-print">Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody id="parking-list" class="bg-white divide-y divide-slate-50">
-                            <!-- JS Content -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
         </aside>
-
-        <div class="flex-1 relative">
-            <div id="map"></div>
-        </div>
 
     </div>
 
@@ -148,11 +154,22 @@
         var pathLine = null;
         var markers = [];
         var parkingMarkers = [];
+        var isSheetCollapsed = false;
 
         function toggleInputs() {
             const mode = document.getElementById('mode-selector').value;
             document.getElementById('input-single').classList.toggle('hidden', mode !== 'single');
             document.getElementById('input-range').classList.toggle('hidden', mode !== 'range');
+        }
+
+        function toggleSheet() {
+            const sheet = document.getElementById('bottom-sheet');
+            isSheetCollapsed = !isSheetCollapsed;
+            if(isSheetCollapsed) {
+                sheet.style.maxHeight = "12vh"; // Ciutkan panel
+            } else {
+                sheet.style.maxHeight = "45vh"; // Lebarkan panel
+            }
         }
 
         function updateHistory() {
@@ -173,17 +190,20 @@
                 params = `start=${start}&end=${end}`; displayDate = `${start} s/d ${end}`;
             }
 
+            // Hide filter on mobile after clicking
+            if(window.innerWidth < 1024) document.getElementById('filter-box').classList.add('hidden');
+
             params += `&_t=${Date.now()}`;
             btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i>';
             btn.disabled = true;
 
-            loadHistory(params, displayDate).finally(() => {
+            loadHistory(params, displayDate, mode).finally(() => {
                 btn.innerHTML = 'Tampilkan Riwayat';
                 btn.disabled = false;
             });
         }
 
-        async function loadHistory(queryString, displayDate = "Hari Ini") {
+        async function loadHistory(queryString, displayDate = "Hari Ini", mode = "today") {
             if (pathLine) map.removeLayer(pathLine);
             markers.forEach(m => map.removeLayer(m));
             parkingMarkers.forEach(m => map.removeLayer(m));
@@ -194,13 +214,32 @@
             try {
                 const url = `/api/history/{{ $device->imei }}?${queryString}`;
                 const response = await fetch(url);
-                const data = await response.json();
+                const rawData = await response.json();
+                
+                // BACKUP FILTER FRONTEND (Menjamin Data Sesuai Tanggal)
+                let data = [];
+                if (mode === 'single') {
+                    const dateStr = document.getElementById('date-single').value;
+                    data = rawData.filter(d => d.gps_time.startsWith(dateStr));
+                } else if (mode === 'range') {
+                    const startStr = document.getElementById('date-start').value;
+                    const endStr = document.getElementById('date-end').value;
+                    data = rawData.filter(d => d.gps_time >= startStr && d.gps_time <= endStr + ' 23:59:59');
+                } else {
+                    // Today
+                    const d = new Date();
+                    const todayStr = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, '0') + "-" + String(d.getDate()).padStart(2, '0');
+                    data = rawData.filter(d => d.gps_time.startsWith(todayStr));
+                }
                 
                 const parkingTable = document.getElementById('parking-list');
                 parkingTable.innerHTML = '';
                 
                 if (!data || data.length === 0) {
-                    parkingTable.innerHTML = '<tr><td colspan="4" class="p-12 text-center text-slate-300 text-xs italic">Data tidak ditemukan.</td></tr>';
+                    parkingTable.innerHTML = '<tr><td colspan="4" class="p-8 text-center text-slate-300 text-xs italic">Data perjalanan tidak ditemukan.</td></tr>';
+                    document.getElementById('stat-points').innerText = '0';
+                    document.getElementById('stat-parking').innerText = '0';
+                    document.getElementById('stat-dist').innerText = '0';
                     return;
                 }
 
@@ -212,7 +251,11 @@
                 data.forEach((p) => {
                     const pos = [parseFloat(p.latitude), parseFloat(p.longitude)];
                     if (lastP) {
-                        const timeDiff = new Date(p.gps_time.replace(' ', 'T') + 'Z') - new Date(lastP.gps_time.replace(' ', 'T') + 'Z');
+                        // Hilangkan 'Z' agar tidak terkonversi oleh Timezone Browser
+                        const t1 = new Date(p.gps_time.replace(' ', 'T')).getTime();
+                        const t2 = new Date(lastP.gps_time.replace(' ', 'T')).getTime();
+                        const timeDiff = t1 - t2;
+                        
                         if (timeDiff > 300000) { 
                             pEvents.push({ lat: lastP.latitude, lng: lastP.longitude, start: lastP.gps_time, dur: timeDiff });
                         }
@@ -222,22 +265,24 @@
                     lastP = p;
                 });
 
-                pathLine = L.polyline(points, { color: '#3b82f6', weight: 6, opacity: 0.8 }).addTo(map);
+                pathLine = L.polyline(points, { color: '#3b82f6', weight: 5, opacity: 0.8 }).addTo(map);
 
                 pEvents.forEach((evt, i) => {
                     const rowId = `row-${i}`;
-                    const timeLabel = new Date(evt.start.replace(' ', 'T') + 'Z').toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'});
+                    
+                    // Ekstrak string jam langsung dari DB (Sangat akurat karena DB sudah WITA)
+                    const timeLabel = evt.start.substring(11, 16); // Ambil jam "HH:MM"
                     const durLabel = Math.floor(evt.dur/60000) + ' mnt';
                     const latLngLabel = `${parseFloat(evt.lat).toFixed(5)}, ${parseFloat(evt.lng).toFixed(5)}`;
                     const gUrl = `https://www.google.com/maps?q=${evt.lat},${evt.lng}`;
 
                     parkingTable.innerHTML += `
                         <tr id="${rowId}" onclick="focusLocation(${evt.lat}, ${evt.lng}, '${rowId}')" class="cursor-pointer hover:bg-slate-50 transition border-l-4 border-transparent group">
-                            <td class="px-4 py-4 text-[11px] font-bold text-slate-700">${timeLabel}</td>
-                            <td class="px-4 py-4 text-[10px] font-black text-amber-500 uppercase">${durLabel}</td>
-                            <td class="px-4 py-4 text-[10px] font-mono text-slate-400">${latLngLabel}</td>
-                            <td class="px-4 py-4 text-right no-print">
-                                <a href="${gUrl}" target="_blank" class="w-8 h-8 inline-flex items-center justify-center rounded-xl bg-blue-50 text-blue-500 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                            <td class="px-3 py-3 text-[11px] font-bold text-slate-700">${timeLabel}</td>
+                            <td class="px-3 py-3 text-[10px] font-black text-amber-500 uppercase">${durLabel}</td>
+                            <td class="px-3 py-3 text-[9px] font-mono text-slate-400">${latLngLabel}</td>
+                            <td class="px-3 py-3 text-right no-print">
+                                <a href="${gUrl}" target="_blank" class="w-7 h-7 inline-flex items-center justify-center rounded-lg bg-blue-50 text-blue-500 hover:bg-blue-600 hover:text-white transition-all">
                                     <i class="fa-solid fa-location-arrow text-[10px]"></i>
                                 </a>
                             </td>
@@ -249,13 +294,12 @@
                     }).addTo(map);
 
                     m.bindPopup(`
-                        <div class="p-2 min-w-[140px]">
-                            <p class="text-[10px] font-black text-amber-600 uppercase mb-1">PARKIR #${i+1}</p>
-                            <p class="text-[12px] font-bold">Mulai: ${timeLabel}</p>
-                            <p class="text-[12px] font-bold">Durasi: ${durLabel}</p>
-                            <p class="text-[10px] text-slate-400 mt-1">${latLngLabel}</p>
+                        <div class="p-2 min-w-[130px]">
+                            <p class="text-[10px] font-black text-amber-600 uppercase mb-1">AREA PARKIR</p>
+                            <p class="text-[11px] font-bold text-slate-800">Mulai: ${timeLabel} WITA</p>
+                            <p class="text-[11px] font-bold text-slate-800">Durasi: ${durLabel}</p>
                             <hr class="my-2 border-slate-100">
-                            <a href="${gUrl}" target="_blank" class="block w-full text-center bg-blue-600 text-white text-[10px] font-black py-2 rounded-xl uppercase">Google Maps</a>
+                            <a href="${gUrl}" target="_blank" class="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black py-1.5 rounded-lg uppercase">Lihat Google Maps</a>
                         </div>
                     `);
                     m.on('click', () => highlightRow(rowId));
@@ -270,19 +314,35 @@
             } catch (err) { console.error(err); }
         }
 
-        function focusLocation(lat, lng, rowId) { map.flyTo([lat, lng], 17, { duration: 1.5 }); highlightRow(rowId); }
+        function focusLocation(lat, lng, rowId) { 
+            // Pastikan panel ditarik jika layarnya HP dan sedang menciut
+            if(isSheetCollapsed && window.innerWidth < 1024) toggleSheet();
+            map.flyTo([lat, lng], 17, { duration: 1.5 }); 
+            highlightRow(rowId); 
+        }
+        
         function highlightRow(rowId) {
             document.querySelectorAll('#parking-list tr').forEach(tr => tr.classList.remove('highlight-row'));
             const row = document.getElementById(rowId);
-            if (row) { row.classList.add('highlight-row'); row.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+            if (row) { 
+                row.classList.add('highlight-row'); 
+                
+                // Gunakan requestAnimationFrame agar scroll bekerja mulus setelah render
+                requestAnimationFrame(() => {
+                    const container = document.getElementById('detail-list-container');
+                    const rowTop = row.offsetTop;
+                    container.scrollTo({ top: rowTop - 60, behavior: 'smooth' });
+                });
+            }
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            const today = new Date().toISOString().split('T')[0];
+            const d = new Date();
+            const today = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, '0') + "-" + String(d.getDate()).padStart(2, '0');
             document.getElementById('date-single').value = today;
             document.getElementById('date-start').value = today;
             document.getElementById('date-end').value = today;
-            loadHistory('range=today');
+            loadHistory('range=today', 'Hari Ini', 'today');
         });
     </script>
 </body>
