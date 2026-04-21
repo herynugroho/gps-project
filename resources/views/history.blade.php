@@ -98,7 +98,8 @@
             <div class="flex-1 lg:hidden"></div>
 
             <!-- BOTTOM SHEET (STATS & DETAILS) -->
-            <div class="bg-white pointer-events-auto rounded-t-3xl lg:rounded-none shadow-[0_-15px_30px_rgba(0,0,0,0.15)] lg:shadow-none flex flex-col z-30 transition-all duration-300 h-[45vh] lg:h-auto lg:flex-1" id="bottom-sheet">
+            <!-- FIX: Menambahkan lg:h-full lg:min-h-0 agar panel bisa di-scroll di Desktop -->
+            <div class="bg-white pointer-events-auto rounded-t-3xl lg:rounded-none shadow-[0_-15px_30px_rgba(0,0,0,0.15)] lg:shadow-none flex flex-col z-30 transition-all duration-300 h-[45vh] lg:h-full lg:flex-1 lg:min-h-0" id="bottom-sheet">
                 
                 <!-- Handle Pull untuk HP -->
                 <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-2 lg:hidden cursor-pointer" onclick="toggleSheet()"></div>
@@ -122,7 +123,7 @@
                 </div>
 
                 <!-- List Persinggahan -->
-                <div class="flex-1 overflow-y-auto p-4 lg:p-5 no-scrollbar bg-white" id="detail-list-container">
+                <div class="flex-1 overflow-y-auto p-4 lg:p-5 no-scrollbar bg-white lg:min-h-0" id="detail-list-container">
                     <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Detail Persinggahan</h3>
                     <div class="overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
                         <table class="min-w-full divide-y divide-slate-100 report-table">
@@ -216,27 +217,16 @@
                 const response = await fetch(url);
                 const rawData = await response.json();
                 
-                // BACKUP FILTER FRONTEND (Menjamin Data Sesuai Tanggal)
-                let data = [];
-                if (mode === 'single') {
-                    const dateStr = document.getElementById('date-single').value;
-                    data = rawData.filter(d => d.gps_time.startsWith(dateStr));
-                } else if (mode === 'range') {
-                    const startStr = document.getElementById('date-start').value;
-                    const endStr = document.getElementById('date-end').value;
-                    data = rawData.filter(d => d.gps_time >= startStr && d.gps_time <= endStr + ' 23:59:59');
-                } else {
-                    // Today
-                    const d = new Date();
-                    const todayStr = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, '0') + "-" + String(d.getDate()).padStart(2, '0');
-                    data = rawData.filter(d => d.gps_time.startsWith(todayStr));
-                }
+                // MENGHAPUS FILTER KETAT FRONTEND
+                // Memastikan data apapun yang dikembalikan oleh API untuk tanggal tersebut langsung diproses.
+                // *Pastikan DashboardController Bapak sudah memfilter request->query('date') di backend*
+                let data = rawData;
                 
                 const parkingTable = document.getElementById('parking-list');
                 parkingTable.innerHTML = '';
                 
                 if (!data || data.length === 0) {
-                    parkingTable.innerHTML = '<tr><td colspan="4" class="p-8 text-center text-slate-300 text-xs italic">Data perjalanan tidak ditemukan.</td></tr>';
+                    parkingTable.innerHTML = '<tr><td colspan="4" class="p-8 text-center text-slate-300 text-xs italic">Data perjalanan tidak ditemukan untuk tanggal ini.</td></tr>';
                     document.getElementById('stat-points').innerText = '0';
                     document.getElementById('stat-parking').innerText = '0';
                     document.getElementById('stat-dist').innerText = '0';
@@ -273,15 +263,15 @@
                     // Ekstrak string jam langsung dari DB (Sangat akurat karena DB sudah WITA)
                     const timeLabel = evt.start.substring(11, 16); // Ambil jam "HH:MM"
                     const durLabel = Math.floor(evt.dur/60000) + ' mnt';
-                    const latLngLabel = `${parseFloat(evt.lat).toFixed(5)}, ${parseFloat(evt.lng).toFixed(5)}`;
+                    const latLngLabel = `${parseFloat(evt.lat).toFixed(5)}, <br>${parseFloat(evt.lng).toFixed(5)}`;
                     const gUrl = `https://www.google.com/maps?q=${evt.lat},${evt.lng}`;
 
                     parkingTable.innerHTML += `
                         <tr id="${rowId}" onclick="focusLocation(${evt.lat}, ${evt.lng}, '${rowId}')" class="cursor-pointer hover:bg-slate-50 transition border-l-4 border-transparent group">
-                            <td class="px-3 py-3 text-[11px] font-bold text-slate-700">${timeLabel}</td>
-                            <td class="px-3 py-3 text-[10px] font-black text-amber-500 uppercase">${durLabel}</td>
-                            <td class="px-3 py-3 text-[9px] font-mono text-slate-400">${latLngLabel}</td>
-                            <td class="px-3 py-3 text-right no-print">
+                            <td class="px-3 py-4 text-[11px] font-bold text-slate-700">${timeLabel}</td>
+                            <td class="px-3 py-4 text-[10px] font-black text-amber-500 uppercase">${durLabel}</td>
+                            <td class="px-3 py-4 text-[9px] font-mono text-slate-400">${latLngLabel}</td>
+                            <td class="px-3 py-4 text-right no-print">
                                 <a href="${gUrl}" target="_blank" class="w-7 h-7 inline-flex items-center justify-center rounded-lg bg-blue-50 text-blue-500 hover:bg-blue-600 hover:text-white transition-all">
                                     <i class="fa-solid fa-location-arrow text-[10px]"></i>
                                 </a>

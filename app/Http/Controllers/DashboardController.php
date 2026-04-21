@@ -80,6 +80,10 @@ class DashboardController extends Controller
             $query->where('gps_time', '>=', Carbon::today());
         }
 
+        if ($request->has('date')) {
+            $query->whereDate('gps_time', $request->date);
+        }
+
         $history = $query->orderBy('gps_time', 'asc')->get();
         return response()->json($history);
     }
