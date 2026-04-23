@@ -11,7 +11,7 @@ use Carbon\Carbon;
 class GpsServer extends Command
 {
     protected $signature = 'gps:server {port=5022} {control_port=5023}';
-    protected $description = 'Hybrid GPS Server V8.2 - Crash Proof & Old Module Fix';
+    protected $description = 'Hybrid GPS Server V8.3 - Ultimate Time Precision & Old Module Fix';
 
     private $connectionDeviceMap = []; 
     private $deviceTypeMap = [];      
@@ -174,7 +174,6 @@ class GpsServer extends Command
             $idInPacket = substr($content, 0, 12); 
             $cmd = substr($content, 12, 4);
             
-            // FIX: Tambahkan orWhere('imei') agar alat lama yang tidak ada factory_id tetap masuk
             $device = DB::table('devices')
                         ->where('factory_id', 'LIKE', '%' . substr($idInPacket, -8))
                         ->orWhere('imei', 'LIKE', '%' . substr($idInPacket, -8))
@@ -185,16 +184,15 @@ class GpsServer extends Command
                 $this->deviceTypeMap[$device->imei] = ['type' => 'TXT', 'header' => '7878', 'serial' => 1];
                 
                 if ($cmd == 'BP05') { 
+                    $this->line(self::CLR_SUCC . "✅ [ONLINE] " . $device->name . self::CLR_RST);
                     $connection->write("(" . $idInPacket . "AP05)"); 
                 } 
                 elseif ($cmd == 'BR00' || $cmd == 'BP04') {
-                    // Cari koordinat dari protokol text lama
                     if (preg_match('/[AV](\d+\.\d+)([NS])(\d+\.\d+)([EW])([\d\.]+)/', substr($content, 12), $m)) {
                         $lat = (floatval(substr($m[1], 0, 2)) + (floatval(substr($m[1], 2)) / 60)) * ($m[2] == 'S' ? -1 : 1);
                         $lng = (floatval(substr($m[3], 0, 3)) + (floatval(substr($m[3], 3)) / 60)) * ($m[4] == 'W' ? -1 : 1);
                         $speed = floatval($m[5]) * 1.852;
                         
-                        // FIX: Rutekan ke savePosition agar mendapat validasi 5 menit (Anchor)
                         $this->savePosition($device, $lat, $lng, $speed, $device->acc_status ?? 1, Carbon::now(self::TZ), "TXT");
                     }
                 } 
@@ -216,9 +214,10 @@ class GpsServer extends Command
             } else {
                 $distance = $this->calculateDistance($lastPos->latitude, $lastPos->longitude, $lat, $lng);
                 
-                // Pastikan format parsing waktu tidak meleset zona waktunya
-                $lastTime = Carbon::parse($lastPos->created_at, self::TZ);
-                $timeDiff = Carbon::now(self::TZ)->diffInSeconds($lastTime);
+                // PERBAIKAN V8.3: Bandingkan berdasarkan Waktu Satelit (gps_time) bukan Waktu Server (created_at)
+                // Ini mencegah error "Time Anchor" spam saat alat mengirim data buffer dari area blank spot
+                $lastGpsTime = Carbon::parse($lastPos->gps_time, self::TZ);
+                $timeDiff = Carbon::parse($time, self::TZ)->diffInSeconds($lastGpsTime);
                 
                 if ($device->acc_status != $acc) { $shouldSave = true; $reason = "ACC Change"; }
                 elseif ($speed > 5) { $shouldSave = true; $reason = "Moving"; }
@@ -247,11 +246,9 @@ class GpsServer extends Command
         if (strlen($hex) < 12) return Carbon::now(self::TZ);
         
         try {
-            // Ekstrak waktu dari alat GPS
             $y = hexdec(substr($hex,0,2)); $m = hexdec(substr($hex,2,2)); $d = hexdec(substr($hex,4,2));
             $h = hexdec(substr($hex,6,2)); $i = hexdec(substr($hex,8,2)); $s = hexdec(substr($hex,10,2));
             
-            // Konversi ke WITA (Jika module ngaco dan kirim bulan/tanggal = 0, fungsi ini akan Error)
             $gpsTime = Carbon::create(2000+$y, $m, $d, $h, $i, $s, 'UTC')->setTimezone(self::TZ);
             $serverTime = Carbon::now(self::TZ);
 
@@ -260,7 +257,6 @@ class GpsServer extends Command
             }
             return $gpsTime;
         } catch (\Exception $e) {
-            // FIX: Kalau modul lama hilang sinyal dan kirim data waktu cacat (000000), pakai jam server!
             return Carbon::now(self::TZ);
         }
     }
@@ -268,7 +264,6 @@ class GpsServer extends Command
     private function calculateDistance($lat1, $lon1, $lat2, $lon2) {
         $theta = $lon1 - $lon2;
         $dist = sin(deg2rad($lat1)) * sin(deg2rad($lat2)) +  cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * cos(deg2rad($theta));
-        // FIX: Mencegah Math Error (NAN) jika alat 100% diam dan koordinatnya kembar identik
         return acos(min(max($dist,-1),1)) * 6371000;
     }
 
