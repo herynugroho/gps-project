@@ -17,14 +17,40 @@ class DashboardController extends Controller
         return view('command_center');
     }
 
+    // public function getApiData() {
+    //     // Mengambil data device beserta status ACC terbaru
+    //     $devices = DB::table('devices')
+    //         ->select('devices.*', 'positions.latitude', 'positions.longitude', 'positions.speed', 'positions.gps_time')
+    //         ->leftJoin('positions', function ($join) {
+    //             $join->on('devices.imei', '=', 'positions.imei')
+    //                  ->whereRaw('positions.id IN (select MAX(id) from positions group by imei)');
+    //         })->get();
+    //     return response()->json($devices);
+    // }
+
     public function getApiData() {
-        // Mengambil data device beserta status ACC terbaru
+        // 1. Kumpulkan dulu ID posisi terakhir dari masing-masing IMEI (Sangat Ringan)
+        $latestPositions = DB::table('positions')
+            ->select('imei', DB::raw('MAX(id) as max_id'))
+            ->groupBy('imei');
+
+        // 2. Lakukan Join Subquery ke tabel devices, lalu tarik koordinatnya
         $devices = DB::table('devices')
-            ->select('devices.*', 'positions.latitude', 'positions.longitude', 'positions.speed', 'positions.gps_time')
-            ->leftJoin('positions', function ($join) {
-                $join->on('devices.imei', '=', 'positions.imei')
-                     ->whereRaw('positions.id IN (select MAX(id) from positions group by imei)');
-            })->get();
+            ->select(
+                'devices.*', 
+                'positions.latitude', 
+                'positions.longitude', 
+                'positions.speed', 
+                'positions.gps_time'
+            )
+            // Join ke subquery yang kita buat di atas
+            ->leftJoinSub($latestPositions, 'latest', function ($join) {
+                $join->on('devices.imei', '=', 'latest.imei');
+            })
+            // Terakhir, ambil detail lat/long berdasarkan ID terakhir (max_id)
+            ->leftJoin('positions', 'latest.max_id', '=', 'positions.id')
+            ->get();
+
         return response()->json($devices);
     }
 
