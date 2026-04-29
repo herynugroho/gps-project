@@ -7,6 +7,7 @@
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
 
@@ -189,7 +190,7 @@
         const FUEL_RATIO = {{ $device->fuel_ratio ?? 10.0 }}; 
         
         // Harga BBM (Silakan disesuaikan, misal harga Pertalite/Dexlite)
-        const FUEL_PRICE_PER_LITER = 13000; 
+        const FUEL_PRICE_PER_LITER = 10000; 
         // -----------------------
 
         var map = L.map('map', { zoomControl: false }).setView([-5.147, 119.432], 13);
@@ -262,7 +263,7 @@
                 const parkingTable = document.getElementById('parking-list');
                 parkingTable.innerHTML = '';
                 
-                if (!data || data.length === 0) {
+                if (!Array.isArray(data) || data.length === 0) {
                     parkingTable.innerHTML = '<tr><td colspan="4" class="p-8 text-center text-slate-300 text-xs italic">Data perjalanan tidak ditemukan untuk periode ini.</td></tr>';
                     document.getElementById('stat-points').innerText = '0';
                     document.getElementById('stat-parking').innerText = '0';
