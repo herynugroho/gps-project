@@ -44,17 +44,36 @@
              <p class="text-center text-slate-400 text-xs py-10">Mencari armada...</p>
         </div>
 
-        <div class="p-4 border-t">
+        <div class="p-5 border-t border-slate-100 bg-white flex flex-col gap-3 shrink-0">
+            
+            <!-- Tombol Kelola Armada -->
+            <a href="/devices" class="flex items-center justify-center gap-2 w-full py-3.5 bg-slate-900 rounded-xl text-[10px] font-black text-white hover:bg-slate-800 transition uppercase shadow-lg">
+                <i class="fa-solid fa-gear text-blue-400"></i> Kelola Armada
+            </a>
+            
+            <!-- Form & Tombol Logout -->
+            <form method="POST" action="{{ url('/logout') }}" class="m-0">
+                @csrf
+                <button type="submit" class="flex items-center justify-center gap-2 w-full py-3.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-[10px] font-black transition uppercase border border-red-100 active:scale-95">
+                    <i class="fa-solid fa-power-off"></i> Keluar Sistem
+                </button>
+            </form>
+
+        </div>
+
+
+        <!-- <div class="p-4 border-t">
             <a href="/devices" class="flex items-center justify-center gap-2 w-full py-4 bg-slate-900 rounded-2xl text-[10px] font-black text-white hover:bg-slate-800 transition uppercase">
                 <i class="fa-solid fa-gear text-blue-400"></i> Kelola Armada
             </a>
         </div>
+
         <form method="POST" action="{{ route('logout') }}">
             @csrf
             <button type="submit" class="text-red-500 font-bold text-sm flex items-center gap-2">
                 <i class="fa-solid fa-power-off"></i> Keluar Sistem
             </button>
-        </form>
+        </form> -->
     </aside>
 
     <!-- MAIN MAP -->
