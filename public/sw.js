@@ -1,4 +1,4 @@
-const CACHE_NAME = 'primatrack-v1';
+const CACHE_NAME = 'primatrack-v2';
 
 // Install Service Worker
 self.addEventListener('install', event => {
