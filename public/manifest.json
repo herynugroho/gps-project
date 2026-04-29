@@ -1,0 +1,17 @@
+{
+  "name": "PrimaTrack Enterprise",
+  "short_name": "PrimaTrack",
+  "start_url": "/login",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/GPS_Icon.svg/512px-GPS_Icon.svg.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
