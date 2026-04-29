@@ -1,19 +1,6 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <!-- PWA Setup -->
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#0f172a">
-    <link rel="apple-touch-icon" href="/icon.png">
-    
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js');
-            });
-        }
-    </script>
-
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>PRIMA TRACK - Monitoring System</title>
@@ -41,51 +28,60 @@
 </head>
 <body class="bg-slate-100 flex h-screen overflow-hidden relative">
 
+    <!-- OVERLAY GELAP UNTUK MOBILE (Click Outside to Close) -->
+    <div id="sidebar-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[1001] opacity-0 pointer-events-none transition-opacity duration-300 md:hidden"></div>
+
     <!-- SIDEBAR -->
     <aside id="sidebar" class="fixed inset-y-0 left-0 w-80 bg-white border-r border-slate-200 flex flex-col z-[1002] transform -translate-x-full md:translate-x-0 md:relative transition-transform duration-300 shadow-2xl md:shadow-none">
-        <div class="p-6 bg-slate-900 text-white shrink-0">
+        
+        <!-- Header Sidebar (Logo Baru & Rebranding) -->
+        <div class="p-6 bg-[#0B1120] text-white shrink-0 flex justify-between items-center">
             <div class="flex items-center gap-3">
+                <!-- Logo Signature Dark SVG -->
+                <svg viewBox="0 0 512 512" class="w-10 h-10 rounded-xl shadow-[0_0_15px_rgba(59,130,246,0.3)]">
+                    <rect width="512" height="512" fill="#0B1120" />
+                    <g transform="translate(-19, -29)">
+                        <path d="M120 110 h 120 c 71.8 0 130 58.2 130 130 v 0 c 0 71.8 -58.2 130 -130 130 h -50 v 90 c 0 11.05 -8.95 20 -20 20 h -40 c -11.05 0 -20 -8.95 -20 -20 V 130 c 0 -11.05 8.95 -20 20 -20 z M 190 190 v 100 h 50 c 27.6 0 50 -22.4 50 -50 v 0 c 0 -27.6 -22.4 -50 -50 -50 h -50 z" fill="#FFFFFF" />
+                        <circle cx="410" cy="440" r="40" fill="#3B82F6" />
+                    </g>
+                </svg>
                 <div>
-                    <h1 class="font-black text-sm uppercase tracking-wider leading-none">PRIMA TRACK</h1>
-                    <p class="text-[9px] text-blue-300 mt-1 uppercase font-bold italic">Monitoring System</p>
+                    <h1 class="font-black text-sm uppercase tracking-wider leading-none">PRIMA TRACK<span class="text-blue-500">.</span></h1>
+                    <p class="text-[9px] text-blue-300 mt-1 uppercase font-bold italic">Enterprise Edition</p>
                 </div>
+            </div>
+            
+            <!-- Tombol Close khusus untuk Mobile -->
+            <button onclick="toggleSidebar()" class="md:hidden w-8 h-8 rounded-lg bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition border border-slate-700 active:scale-95">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+        </div>
+
+        <!-- Fitur Pencarian Armada -->
+        <div class="px-4 pt-4 pb-2 shrink-0">
+            <div class="relative">
+                <input type="text" id="searchInput" onkeyup="filterUnits()" placeholder="Cari nama armada atau plat..." class="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-11 pr-4 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm">
+                <i class="fa-solid fa-magnifying-glass absolute left-4 top-3.5 text-slate-400"></i>
             </div>
         </div>
 
-        <div class="flex-1 overflow-y-auto p-4 space-y-3" id="unit-list">
+        <!-- List Kendaraan (Disesuaikan spacing-nya) -->
+        <div class="flex-1 overflow-y-auto px-4 pb-4" id="unit-list">
              <p class="text-center text-slate-400 text-xs py-10">Mencari armada...</p>
         </div>
 
+        <!-- Bagian Bawah Sidebar (Kelola & Logout) -->
         <div class="p-5 border-t border-slate-100 bg-white flex flex-col gap-3 shrink-0">
-            
-            <!-- Tombol Kelola Armada -->
             <a href="/devices" class="flex items-center justify-center gap-2 w-full py-3.5 bg-slate-900 rounded-xl text-[10px] font-black text-white hover:bg-slate-800 transition uppercase shadow-lg">
                 <i class="fa-solid fa-gear text-blue-400"></i> Kelola Armada
             </a>
-            
-            <!-- Form & Tombol Logout -->
             <form method="POST" action="{{ url('/logout') }}" class="m-0">
                 @csrf
                 <button type="submit" class="flex items-center justify-center gap-2 w-full py-3.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-[10px] font-black transition uppercase border border-red-100 active:scale-95">
                     <i class="fa-solid fa-power-off"></i> Keluar Sistem
                 </button>
             </form>
-
         </div>
-
-
-        <!-- <div class="p-4 border-t">
-            <a href="/devices" class="flex items-center justify-center gap-2 w-full py-4 bg-slate-900 rounded-2xl text-[10px] font-black text-white hover:bg-slate-800 transition uppercase">
-                <i class="fa-solid fa-gear text-blue-400"></i> Kelola Armada
-            </a>
-        </div>
-
-        <form method="POST" action="{{ route('logout') }}">
-            @csrf
-            <button type="submit" class="text-red-500 font-bold text-sm flex items-center gap-2">
-                <i class="fa-solid fa-power-off"></i> Keluar Sistem
-            </button>
-        </form> -->
     </aside>
 
     <!-- MAIN MAP -->
@@ -152,22 +148,38 @@
 
     <script>
         var sidebar = document.getElementById('sidebar');
+        var overlay = document.getElementById('sidebar-overlay');
         var markers = {};
         var selectedImei = null;
         var map = L.map('map', { zoomControl: false }).setView([-5.147, 119.432], 13);
         
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: 'PRIMA TRACK System' }).addTo(map);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: 'Prima GPS System' }).addTo(map);
 
-        function toggleSidebar() { sidebar.classList.toggle('-translate-x-full'); }
+        function toggleSidebar() { 
+            sidebar.classList.toggle('-translate-x-full'); 
+            // Toggle Overlay
+            overlay.classList.toggle('opacity-0');
+            overlay.classList.toggle('pointer-events-none');
+        }
+
+        // FUNGSI BARU: PENCARIAN ARMADA REAL-TIME
+        function filterUnits() {
+            let input = document.getElementById('searchInput').value.toLowerCase();
+            let items = document.getElementsByClassName('unit-card');
+            for (let i = 0; i < items.length; i++) {
+                let text = items[i].getAttribute('data-search');
+                if (text.includes(input)) {
+                    items[i].style.display = "block";
+                } else {
+                    items[i].style.display = "none";
+                }
+            }
+        }
 
         // FUNGSI BARU: NATIVE WITA MURNI
         function formatWita(gpsTime) {
             if(!gpsTime) return "--:--:-- WITA";
             
-            // Format DB selalu "YYYY-MM-DD HH:MM:SS"
-            // Kita potong dari karakter indeks ke-11 sebanyak 8 karakter
-            // Contoh: "2026-04-21 16:56:00" -> "16:56:00"
-            // Lalu kita ubah tanda ':' jadi '.' biar estetik (16.56.00 WITA)
             try {
                 let timeStr = gpsTime.substring(11, 19).replace(/:/g, '.');
                 return timeStr + " WITA";
@@ -191,8 +203,9 @@
                         let statusColor = (speed >= 5) ? 'status-moving' : (accOn ? 'status-acc-on' : 'status-stop');
                         
                         listHtml += `
-                            <div onclick="focusUnit('${unit.imei}', ${lat}, ${lng})" 
-                                class="p-4 border-2 rounded-2xl transition-all cursor-pointer ${selectedImei === unit.imei ? 'border-blue-500 bg-blue-50' : 'border-slate-50 bg-white hover:border-blue-200'}">
+                            <div data-search="${(unit.name + ' ' + unit.plate_number).toLowerCase()}"
+                                onclick="focusUnit('${unit.imei}', ${lat}, ${lng})" 
+                                class="unit-card mb-3 p-4 border-2 rounded-2xl transition-all cursor-pointer ${selectedImei === unit.imei ? 'border-blue-500 bg-blue-50' : 'border-slate-50 bg-white hover:border-blue-200'}">
                                 <div class="flex justify-between items-start mb-2">
                                     <div>
                                         <h4 class="font-black text-slate-800 uppercase text-[11px] leading-tight">${unit.name}</h4>
@@ -220,6 +233,7 @@
                         if (selectedImei === unit.imei) updateDetail(unit);
                     });
                     document.getElementById('unit-list').innerHTML = listHtml;
+                    filterUnits(); 
                 });
         }
 
@@ -227,7 +241,11 @@
             selectedImei = imei;
             if (lat) map.flyTo([lat, lng], 17);
             document.getElementById('detail-panel').classList.remove('translate-y-[120%]');
-            if (window.innerWidth < 768) sidebar.classList.add('-translate-x-full');
+            
+            // Otomatis menutup sidebar dan overlay jika diklik dari HP
+            if (window.innerWidth < 768 && !sidebar.classList.contains('-translate-x-full')) { 
+                toggleSidebar(); 
+            }
             updateUI();
         }
 
@@ -236,7 +254,6 @@
             document.getElementById('det-plate').innerText = unit.plate_number;
             document.getElementById('det-speed').innerText = Math.round(unit.speed || 0);
             
-            // Mengirim data dari DB langsung untuk di-format murni WITA
             document.getElementById('det-time').innerText = formatWita(unit.gps_time || unit.last_online);
             
             document.getElementById('det-module-badge').innerText = unit.module_type === 'GT06N' ? 'GT06N 4G' : 'STANDARD';
