@@ -17,7 +17,7 @@ Route::middleware('guest')->group(function () {
 
 Route::middleware('auth')->group(function () {
     // Dashboard Utama
-    Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/api/gps-data', [DashboardController::class, 'getApiData']);
 
     // Manajemen Armada (Public)
@@ -39,7 +39,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 });
 
-
+Route::get('/', function () {
+    return redirect('/dashboard');
+});
 // // Dashboard Utama
 // Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 // Route::get('/api/gps-data', [DashboardController::class, 'getApiData']);

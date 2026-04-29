@@ -2,90 +2,152 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - PrimaTrack Enterprise</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Login - PrimaTrack</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; }
-        .bg-login {
-            background-color: #0f172a;
-            background-image: radial-gradient(circle at top right, #1e293b, #0f172a);
+        body { 
+            font-family: 'Inter', sans-serif; /* Menggunakan Inter untuk kesan SaaS yang lebih kaku & profesional */
+            background-color: #ffffff;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        /* Animasi Radar GPS yang elegan dan mulus */
+        @keyframes radar-ripple {
+            0% { transform: scale(0.5); opacity: 0.8; border-width: 2px; }
+            100% { transform: scale(3.5); opacity: 0; border-width: 1px; }
+        }
+        .radar-ring {
+            position: absolute;
+            border: solid rgba(59, 130, 246, 0.6); /* Warna Biru */
+            border-radius: 50%;
+            width: 120px;
+            height: 120px;
+            animation: radar-ripple 4s infinite cubic-bezier(0.1, 0.4, 0.8, 1);
+        }
+        .radar-ring:nth-child(1) { animation-delay: 0s; }
+        .radar-ring:nth-child(2) { animation-delay: 1.33s; }
+        .radar-ring:nth-child(3) { animation-delay: 2.66s; }
+
+        /* Custom input style for cleaner look */
+        .clean-input:focus-within {
+            border-color: #0f172a;
+            box-shadow: 0 0 0 1px #0f172a;
         }
     </style>
 </head>
-<body class="bg-login min-h-screen flex items-center justify-center p-4">
+<body class="min-h-screen flex text-slate-900 antialiased selection:bg-blue-200 selection:text-blue-900">
 
-    <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden">
-        <!-- Header Section -->
-        <div class="p-8 text-center bg-slate-50 border-b border-slate-100">
-            <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600 text-white text-2xl mb-4 shadow-lg shadow-blue-500/30">
-                <i class="fa-solid fa-location-crosshairs"></i>
-            </div>
-            <h1 class="text-2xl font-black text-slate-800 tracking-tight">PrimaTrack</h1>
-            <p class="text-sm font-semibold text-slate-500 mt-1 uppercase tracking-widest">Enterprise Command Center</p>
+    <!-- LEFT SIDE: Branding & Radar Animation (Hidden on Mobile) -->
+    <div class="hidden lg:flex lg:w-1/2 bg-[#0B1120] p-16 flex-col justify-between relative overflow-hidden">
+        
+        <!-- Background aksen gelap agar tidak terlalu flat -->
+        <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-slate-800/40 via-[#0B1120] to-[#0B1120]"></div>
+
+        <!-- Branding Text Besar -->
+        <div class="relative z-10">
+            <h1 class="text-6xl font-black text-white tracking-tighter">
+                PrimaTrack<span class="text-blue-500">.</span>
+            </h1>
+            <p class="mt-4 text-slate-400 font-medium tracking-wide">Enterprise Fleet Monitoring</p>
         </div>
 
-        <!-- Form Section -->
-        <div class="p-8">
-            <!-- Alert jika password salah -->
+        <!-- Visualisasi Radar Sederhana -->
+        <div class="relative z-10 flex-1 flex items-center justify-center my-10">
+            <div class="relative flex items-center justify-center w-64 h-64">
+                <!-- Rings -->
+                <div class="radar-ring"></div>
+                <div class="radar-ring"></div>
+                <div class="radar-ring"></div>
+                
+                <!-- Center Pin / Vehicle -->
+                <div class="relative z-20 w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-white text-2xl shadow-[0_0_40px_rgba(37,99,235,0.6)]">
+                    <i class="fa-solid fa-location-crosshairs"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Space filler untuk mendorong radar ke tengah -->
+        <div class="relative z-10 h-16"></div>
+    </div>
+
+    <!-- RIGHT SIDE: Clean Login Form -->
+    <div class="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-12 lg:p-20 bg-white">
+        
+        <div class="w-full max-w-[380px]">
+            
+            <!-- Mobile Logo (Shows only on small screens) -->
+            <div class="lg:hidden mb-12">
+                <h1 class="text-4xl font-black text-slate-900 tracking-tighter">
+                    PrimaTrack<span class="text-blue-600">.</span>
+                </h1>
+            </div>
+            
+            <!-- Form Header -->
+            <div class="mb-10">
+                <h2 class="text-2xl font-bold text-slate-900 tracking-tight mb-2">Masuk ke Sistem</h2>
+                <p class="text-slate-500 text-sm">Silakan gunakan kredensial akses Anda.</p>
+            </div>
+
+            <!-- Error Alert -->
             @if ($errors->any())
-                <div class="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded-r-lg flex items-center">
-                    <i class="fa-solid fa-circle-exclamation text-red-500 mr-3"></i>
-                    <span class="text-sm font-medium text-red-700">{{ $errors->first() }}</span>
+                <div class="mb-6 p-4 bg-red-50 border border-red-100 rounded-lg flex items-start gap-3">
+                    <i class="fa-solid fa-circle-exclamation text-red-600 mt-0.5"></i>
+                    <span class="text-sm font-medium text-red-800 leading-snug">{{ $errors->first() }}</span>
                 </div>
             @endif
 
+            <!-- Form -->
             <form method="POST" action="{{ url('/login') }}" class="space-y-6">
                 @csrf
                 
                 <!-- Email Input -->
-                <div>
-                    <label for="email" class="block text-sm font-bold text-slate-700 mb-2">Email Admin / Kampus</label>
-                    <div class="relative">
-                        <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
-                            <i class="fa-solid fa-envelope"></i>
+                <div class="space-y-2">
+                    <label for="email" class="block text-sm font-bold text-slate-700">Email Akses</label>
+                    <div class="relative clean-input border border-slate-300 rounded-lg bg-white transition-all overflow-hidden flex items-center">
+                        <div class="pl-4 pr-2 text-slate-400">
+                            <i class="fa-regular fa-envelope text-sm"></i>
                         </div>
                         <input type="email" name="email" id="email" value="{{ old('email') }}" required autofocus
-                            class="block w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-slate-400" 
-                            placeholder="admin@kampus.ac.id">
+                            class="w-full py-3.5 pr-4 bg-transparent outline-none text-sm text-slate-900 placeholder-slate-400 font-medium" 
+                            placeholder="admin@sistem.com">
                     </div>
                 </div>
 
                 <!-- Password Input -->
-                <div>
-                    <label for="password" class="block text-sm font-bold text-slate-700 mb-2">Kata Sandi</label>
-                    <div class="relative">
-                        <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
-                            <i class="fa-solid fa-lock"></i>
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <label for="password" class="block text-sm font-bold text-slate-700">Kata Sandi</label>
+                    </div>
+                    <div class="relative clean-input border border-slate-300 rounded-lg bg-white transition-all overflow-hidden flex items-center">
+                        <div class="pl-4 pr-2 text-slate-400">
+                            <i class="fa-regular fa-lock text-sm"></i>
                         </div>
                         <input type="password" name="password" id="password" required
-                            class="block w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-slate-400" 
+                            class="w-full py-3.5 pr-4 bg-transparent outline-none text-sm text-slate-900 placeholder-slate-400 font-medium" 
                             placeholder="••••••••">
                     </div>
                 </div>
 
-                <!-- Remember Me -->
-                <div class="flex items-center justify-between">
+                <!-- Remember Me & Forgot Password -->
+                <div class="flex items-center justify-between pt-2">
                     <div class="flex items-center">
-                        <input id="remember" name="remember" type="checkbox" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-slate-300 rounded cursor-pointer">
-                        <label for="remember" class="ml-2 block text-sm text-slate-600 font-medium cursor-pointer">
-                            Simpan Sesi Akses
+                        <input id="remember" name="remember" type="checkbox" class="w-4 h-4 text-slate-900 bg-white border-slate-300 rounded focus:ring-slate-900 cursor-pointer transition-colors">
+                        <label for="remember" class="ml-2.5 text-sm font-medium text-slate-600 cursor-pointer select-none">
+                            Ingat saya
                         </label>
                     </div>
+                    <a href="#" class="text-sm font-bold text-slate-600 hover:text-slate-900 transition-colors">Lupa sandi?</a>
                 </div>
 
                 <!-- Submit Button -->
-                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center gap-2 group">
-                    Masuk ke Sistem Keamanan
-                    <i class="fa-solid fa-arrow-right-to-bracket group-hover:translate-x-1 transition-transform"></i>
+                <button type="submit" class="w-full mt-6 py-3.5 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-sm tracking-wide transition-colors active:scale-[0.99] flex items-center justify-center gap-2">
+                    Login
                 </button>
             </form>
-        </div>
 
-        <div class="p-6 text-center border-t border-slate-100 bg-slate-50">
-            <p class="text-xs text-slate-400 font-medium">&copy; {{ date('Y') }} Kasau Software Solutions. All rights reserved.</p>
         </div>
     </div>
 
