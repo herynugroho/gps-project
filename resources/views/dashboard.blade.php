@@ -86,11 +86,33 @@
 
     <!-- MAIN MAP -->
     <main class="flex-1 relative flex flex-col h-full">
-        <div class="absolute top-4 left-4 z-[500] md:hidden">
-            <button onclick="toggleSidebar()" class="bg-white p-3 rounded-xl shadow-xl border border-slate-100">
-                <i class="fa-solid fa-bars-staggered text-slate-900"></i>
+        
+        <!-- MOBILE FLOATING HEADER (NEW) -->
+        <div class="absolute top-4 left-4 right-4 z-[500] md:hidden flex items-center justify-between bg-white/80 backdrop-blur-md px-2 py-2 rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-white">
+            
+            <!-- Tombol Menu (Burger) -->
+            <button onclick="toggleSidebar()" class="w-11 h-11 bg-white shadow-sm border border-slate-200/60 rounded-xl text-slate-800 flex items-center justify-center hover:bg-slate-50 transition active:scale-95">
+                <i class="fa-solid fa-bars-staggered"></i>
             </button>
+            
+            <!-- Branding Logo & Teks -->
+            <div class="flex items-center gap-3 pr-3">
+                <div class="flex flex-col text-right justify-center">
+                    <h1 class="font-black text-slate-900 text-sm tracking-tight uppercase leading-none">Prima Track<span class="text-blue-600">.</span></h1>
+                    <span class="text-[8px] text-slate-500 font-bold uppercase tracking-widest mt-1">Enterprise</span>
+                </div>
+                <!-- Mini SVG Logo -->
+                <svg viewBox="0 0 512 512" class="w-8 h-8 rounded-xl shadow-md shrink-0">
+                    <rect width="512" height="512" fill="#0B1120" />
+                    <g transform="translate(-19, -29)">
+                        <path d="M120 110 h 120 c 71.8 0 130 58.2 130 130 v 0 c 0 71.8 -58.2 130 -130 130 h -50 v 90 c 0 11.05 -8.95 20 -20 20 h -40 c -11.05 0 -20 -8.95 -20 -20 V 130 c 0 -11.05 8.95 -20 20 -20 z M 190 190 v 100 h 50 c 27.6 0 50 -22.4 50 -50 v 0 c 0 -27.6 -22.4 -50 -50 -50 h -50 z" fill="#FFFFFF" />
+                        <circle cx="410" cy="440" r="40" fill="#3B82F6" />
+                    </g>
+                </svg>
+            </div>
+
         </div>
+
         <div id="map"></div>
 
         <!-- DETAIL PANEL -->
