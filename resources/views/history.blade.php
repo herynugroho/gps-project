@@ -30,13 +30,9 @@
         @media print {
             .no-print { display: none !important; }
             
-            /* Peta hanya ambil setengah halaman atas */
             #map-container { position: static !important; height: 350px !important; width: 100% !important; flex: none !important; margin-bottom: 20px; border: 2px solid #e2e8f0; border-radius: 8px;}
-            
-            /* "Bebaskan" tinggi body agar bisa berhalaman-halaman */
             body, html { overflow: visible !important; height: auto !important; }
             
-            /* "Bebaskan" kontainer utama dan sidebar */
             .main-wrapper, .side-panel { 
                 height: auto !important; 
                 overflow: visible !important; 
@@ -47,7 +43,6 @@
                 border: none !important;
             }
 
-            /* "Bebaskan" tabel dari kurungan scroll */
             #bottom-sheet, #detail-list-container, #detail-list {
                 height: auto !important;
                 max-height: none !important;
@@ -59,10 +54,9 @@
 
             .print-only { display: block !important; }
             
-            /* Styling khusus tabel saat dicetak */
             .report-table { width: 100%; border-collapse: collapse; margin-top: 20px; page-break-inside: auto; }
-            .report-table tr { page-break-inside: avoid; page-break-after: auto; } /* Cegah baris terpotong antar halaman */
-            .report-table thead { display: table-header-group; } /* Ulangi header tabel di setiap halaman baru */
+            .report-table tr { page-break-inside: avoid; page-break-after: auto; }
+            .report-table thead { display: table-header-group; }
             .report-table th, .report-table td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; font-size: 11px; color: #0f172a;}
             .report-header { text-align: center; margin-bottom: 20px; }
         }
@@ -140,18 +134,25 @@
 
                 <!-- Stats -->
                 <div class="px-4 pb-3 pt-1 lg:p-5 border-b border-slate-100 shrink-0">
-                    <div class="grid grid-cols-3 gap-2 lg:gap-3">
-                        <div class="bg-slate-50 p-2 lg:p-3.5 rounded-2xl border border-slate-100 text-center">
+                    <!-- Menjadi 4 Kolom: Sinyal, Parkir, Jarak, BBM -->
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 lg:gap-3">
+                        <div class="bg-slate-50 p-2 lg:p-3 rounded-2xl border border-slate-100 text-center flex flex-col justify-center">
                             <p class="text-[8px] text-slate-400 font-black uppercase mb-1 tracking-widest">Sinyal</p>
                             <p class="font-black text-slate-800 text-sm leading-none" id="stat-points">0</p>
                         </div>
-                        <div class="bg-amber-50 p-2 lg:p-3.5 rounded-2xl border border-amber-100 text-center">
+                        <div class="bg-amber-50 p-2 lg:p-3 rounded-2xl border border-amber-100 text-center flex flex-col justify-center">
                             <p class="text-[8px] text-amber-500 font-black uppercase mb-1 tracking-widest">Parkir</p>
                             <p class="font-black text-amber-600 text-sm leading-none" id="stat-parking">0</p>
                         </div>
-                        <div class="bg-blue-50 p-2 lg:p-3.5 rounded-2xl border border-blue-100 text-center">
+                        <div class="bg-blue-50 p-2 lg:p-3 rounded-2xl border border-blue-100 text-center flex flex-col justify-center">
                             <p class="text-[8px] text-blue-500 font-black uppercase mb-1 tracking-widest">Jarak</p>
                             <p class="font-black text-blue-600 text-sm leading-none"><span id="stat-dist">0</span> <small class="text-[8px]">km</small></p>
+                        </div>
+                        <!-- KOTAK ESTIMASI BBM -->
+                        <div class="bg-emerald-50 p-2 lg:p-3 rounded-2xl border border-emerald-100 text-center flex flex-col justify-center">
+                            <p class="text-[8px] text-emerald-500 font-black uppercase mb-1 tracking-widest">Est. BBM</p>
+                            <p class="font-black text-emerald-600 text-sm leading-none mb-1"><span id="stat-fuel-liters">0</span> <small class="text-[8px]">L</small></p>
+                            <p class="text-[8px] font-bold text-emerald-700 bg-emerald-100/50 rounded-md py-0.5" id="stat-fuel-cost">Rp 0</p>
                         </div>
                     </div>
                 </div>
@@ -181,8 +182,16 @@
 
     </div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
+        // --- KONFIGURASI BBM ---
+        // Mengambil Rasio BBM dari Database (Misal 10 berarti 1:10 km)
+        // Default ke 10 jika nilai null/kosong.
+        const FUEL_RATIO = {{ $device->fuel_ratio ?? 10.0 }}; 
+        
+        // Harga BBM (Silakan disesuaikan, misal harga Pertalite/Dexlite)
+        const FUEL_PRICE_PER_LITER = 13000; 
+        // -----------------------
+
         var map = L.map('map', { zoomControl: false }).setView([-5.147, 119.432], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
@@ -248,25 +257,25 @@
             try {
                 const url = `/api/history/{{ $device->imei }}?${queryString}`;
                 const response = await fetch(url);
-                const rawData = await response.json();
-                
-                let data = rawData;
+                const data = await response.json();
                 
                 const parkingTable = document.getElementById('parking-list');
                 parkingTable.innerHTML = '';
                 
                 if (!data || data.length === 0) {
-                    parkingTable.innerHTML = '<tr><td colspan="4" class="p-8 text-center text-slate-300 text-xs italic">Data perjalanan tidak ditemukan untuk tanggal ini.</td></tr>';
+                    parkingTable.innerHTML = '<tr><td colspan="4" class="p-8 text-center text-slate-300 text-xs italic">Data perjalanan tidak ditemukan untuk periode ini.</td></tr>';
                     document.getElementById('stat-points').innerText = '0';
                     document.getElementById('stat-parking').innerText = '0';
                     document.getElementById('stat-dist').innerText = '0';
+                    document.getElementById('stat-fuel-liters').innerText = '0';
+                    document.getElementById('stat-fuel-cost').innerText = 'Rp 0';
                     return;
                 }
 
                 let points = [];
                 let pEvents = [];
                 let lastP = null;
-                let totalD = 0;
+                let totalD = 0; // Total Distance in Meters
 
                 data.forEach((p) => {
                     const pos = [parseFloat(p.latitude), parseFloat(p.longitude)];
@@ -315,8 +324,6 @@
                             <p class="text-[10px] font-black text-amber-600 uppercase mb-1">AREA PARKIR</p>
                             <p class="text-[11px] font-bold text-slate-800">Mulai: ${timeLabel} WITA</p>
                             <p class="text-[11px] font-bold text-slate-800">Durasi: ${durLabel}</p>
-                            <hr class="my-2 border-slate-100">
-                            <a href="${gUrl}" target="_blank" style="color: #ffffff !important; text-decoration: none !important;" class="block w-full text-center bg-blue-600 hover:bg-blue-700 !text-white text-[10px] font-black py-1.5 rounded-lg uppercase shadow-sm transition-all">Lihat Google Maps</a>
                         </div>
                     `);
                     m.on('click', () => highlightRow(rowId));
@@ -324,9 +331,19 @@
                 });
 
                 map.fitBounds(pathLine.getBounds(), { padding: [50, 50] });
+                
+                // --- UPDATE STATISTIK UI ---
+                const distKm = totalD / 1000;
+                const estLiters = distKm / FUEL_RATIO;
+                const estCost = estLiters * FUEL_PRICE_PER_LITER;
+
                 document.getElementById('stat-points').innerText = data.length.toLocaleString();
                 document.getElementById('stat-parking').innerText = pEvents.length;
-                document.getElementById('stat-dist').innerText = (totalD / 1000).toFixed(2);
+                document.getElementById('stat-dist').innerText = distKm.toFixed(2);
+                
+                // Update Statistik BBM
+                document.getElementById('stat-fuel-liters').innerText = estLiters.toFixed(1);
+                document.getElementById('stat-fuel-cost').innerText = 'Rp ' + estCost.toLocaleString('id-ID', {maximumFractionDigits: 0});
 
             } catch (err) { console.error(err); }
         }
