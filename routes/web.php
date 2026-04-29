@@ -39,10 +39,6 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 });
 
-Route::get('/', function () {
-    return redirect('/');
-});
-
 
 // // Dashboard Utama
 // Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
