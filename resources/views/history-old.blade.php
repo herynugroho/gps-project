@@ -32,7 +32,7 @@
             </div>
             <div class="flex flex-col items-end">
                 <div class="flex items-center gap-1.5 mb-1">
-                    <span class="text-[10px] font-black tracking-tighter uppercase italic">PRIMA GPS</span>
+                    <span class="text-[10px] font-black tracking-tighter uppercase italic">PRIMA TRACK</span>
                     <div class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></div>
                 </div>
                 <span class="text-[8px] bg-slate-800 px-2 py-1 rounded text-slate-400 font-mono tracking-tighter border border-slate-700">FID: {{ $device->factory_id }}</span>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>PRIMA GPS - Monitoring System</title>
+    <title>PRIMA TRACK - Monitoring System</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -32,9 +32,8 @@
     <aside id="sidebar" class="fixed inset-y-0 left-0 w-80 bg-white border-r border-slate-200 flex flex-col z-[1002] transform -translate-x-full md:translate-x-0 md:relative transition-transform duration-300 shadow-2xl md:shadow-none">
         <div class="p-6 bg-slate-900 text-white shrink-0">
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center font-black text-xl shadow-lg">P</div>
                 <div>
-                    <h1 class="font-black text-sm uppercase tracking-wider leading-none">PRIMA GPS</h1>
+                    <h1 class="font-black text-sm uppercase tracking-wider leading-none">PRIMA TRACK</h1>
                     <p class="text-[9px] text-blue-300 mt-1 uppercase font-bold italic">Monitoring System</p>
                 </div>
             </div>
@@ -144,7 +143,7 @@
         var selectedImei = null;
         var map = L.map('map', { zoomControl: false }).setView([-5.147, 119.432], 13);
         
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: 'Prima GPS System' }).addTo(map);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: 'PRIMA TRACK System' }).addTo(map);
 
         function toggleSidebar() { sidebar.classList.toggle('-translate-x-full'); }
 
