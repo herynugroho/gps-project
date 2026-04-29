@@ -49,6 +49,12 @@
                 <i class="fa-solid fa-gear text-blue-400"></i> Kelola Armada
             </a>
         </div>
+        <form method="POST" action="{{ route('logout') }}">
+            @csrf
+            <button type="submit" class="text-red-500 font-bold text-sm flex items-center gap-2">
+                <i class="fa-solid fa-power-off"></i> Keluar Sistem
+            </button>
+        </form>
     </aside>
 
     <!-- MAIN MAP -->
