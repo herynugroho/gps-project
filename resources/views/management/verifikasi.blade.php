@@ -167,15 +167,24 @@
             
             <div style="width: 1px; height: 28px; background-color: #334155;"></div>
 
-            <div class="d-flex align-items-center gap-2.5 ms-1">
-                <div class="logo-box">
-                    <span class="brand-p">P<span class="blue-dot">.</span></span>
-                </div>
-                <div class="lh-1">
-                    <h1 class="brand-title mb-0 uppercase">PRIMA TRACK<span class="blue-dot">.</span></h1>
-                    <span class="brand-subtitle text-uppercase">ENTERPRISE EDITION</span>
+            <div class="p-6 bg-[#0B1120] text-white shrink-0 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <svg viewBox="0 0 512 512" class="w-10 h-10 rounded-xl shadow-[0_0_15px_rgba(59,130,246,0.3)]">
+                    <rect width="512" height="512" fill="#0B1120" />
+                    <g transform="translate(-19, -29)">
+                        <path d="M120 110 h 120 c 71.8 0 130 58.2 130 130 v 0 c 0 71.8 -58.2 130 -130 130 h -50 v 90 c 0 11.05 -8.95 20 -20 20 h -40 c -11.05 0 -20 -8.95 -20 -20 V 130 c 0 -11.05 8.95 -20 20 -20 z M 190 190 v 100 h 50 c 27.6 0 50 -22.4 50 -50 v 0 c 0 -27.6 -22.4 -50 -50 -50 h -50 z" fill="#FFFFFF" />
+                        <circle cx="410" cy="440" r="40" fill="#3B82F6" />
+                    </g>
+                </svg>
+                <div>
+                    <h1 class="font-black text-sm uppercase tracking-wider leading-none">PRIMA TRACK<span class="text-blue-500">.</span></h1>
+                    <p class="text-[9px] text-blue-300 mt-1 uppercase font-bold italic">Enterprise Edition</p>
                 </div>
             </div>
+            <button onclick="toggleSidebar()" class="md:hidden w-8 h-8 rounded-lg bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition border border-slate-700 active:scale-95">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+        </div>
         </div>
         
         <div class="d-none d-sm-block">
