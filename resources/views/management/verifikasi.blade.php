@@ -17,11 +17,11 @@
         <div class="card-body">
             <form id="filterForm" class="row g-3">
                 <div class="col-md-5">
-                    <label class="form-label fw-bold">Pilih Kendaraan</label>
-                    <select id="vehicle_id" class="form-select" required>
+                    <label class="form-label fw-bold">Pilih Kendaraan / Device</label>
+                    <select id="device_id" class="form-select" required>
                         <option value="">-- Pilih Kendaraan --</option>
-                        @foreach($vehicles as $vehicle)
-                            <option value="{{ $vehicle->id }}">{{ $vehicle->plate_number }} - {{ $vehicle->name }}</option>
+                        @foreach($devices as $device)
+                            <option value="{{ $device->id }}">{{ $device->plate_number }} - {{ $device->name }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -50,8 +50,8 @@
                             <th width="20%">Mulai Parkir</th>
                             <th width="15%">Durasi</th>
                             <th width="15%">Koordinat GPS</th>
-                            <th width="20%">Lat Long Pengerjaan</th>
-                            <th width="20%">Keterangan Lapangan</th>
+                            <th width="20%">Lat Long Pengerjaan (Kolom Tambahan)</th>
+                            <th width="20%">Keterangan Lapangan (Kolom Tambahan)</th>
                             <th width="5%">Aksi</th>
                         </tr>
                     </thead>
@@ -69,50 +69,47 @@
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
 $(document).ready(function() {
-    // Setup token CSRF Laravel untuk keamanan AJAX POST
     $.ajaxSetup({
-        headers: {
-            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
-        }
+        headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') }
     });
 
-    // Proses Muat Data Rekap
+    // Ambil Data
     $('#filterForm').on('submit', function(e) {
         e.preventDefault();
-        let vehicleId = $('#vehicle_id').value || $('#vehicle_id').val();
+        let deviceId = $('#device_id').val();
         let date = $('#date').val();
 
-        $('#tableBody').html('<tr><td colspan="7" class="text-center py-4"><div class="spinner-border text-primary spinner-border-sm"></div> Memuat data...</td></tr>');
+        $('#tableBody').html('<tr><td colspan="7" class="text-center py-4"><div class="spinner-border text-primary spinner-border-sm"></div> Memuat data koordinat...</td></tr>');
 
         $.ajax({
             url: "{{ route('verifikasi.data') }}",
             type: "GET",
-            data: { vehicle_id: vehicleId, date: date },
+            data: { device_id: deviceId, date: date },
             success: function(data) {
                 $('#totalPoints').text(data.length + ' Titik Parkir');
                 let html = '';
                 
                 if(data.length === 0) {
-                    html = '<tr><td colspan="7" class="text-center text-danger py-4">Tidak ada data parkir pada tanggal ini.</td></tr>';
+                    html = '<tr><td colspan="7" class="text-center text-danger py-4">Tidak ada data parkir (> 5 mnt) pada tanggal ini.</td></tr>';
                 } else {
                     data.forEach((item, index) => {
                         let statusBtn = item.is_verified ? 'btn-primary' : 'btn-outline-primary';
                         let labelBtn = item.is_verified ? 'Update' : 'Simpan';
                         
                         html += `
-                            <tr data-index="${index}">
+                            <tr>
                                 <td class="text-center">${index + 1}</td>
-                                <td><span class="text-monospace">${item.waktu_mulai}</span></td>
+                                <td><span class="fw-bold">${item.waktu_mulai}</span></td>
                                 <td><span class="badge bg-warning text-dark">${item.durasi}</span></td>
                                 <td>
                                     <small class="text-muted d-block">${item.koordinat_gps}</small>
                                     <a href="https://maps.google.com/?q=${item.koordinat_gps}" target="_blank" class="btn btn-sm btn-light py-0 px-1 border" style="font-size:10px;">Buka Map</a>
                                 </td>
                                 <td>
-                                    <input type="text" class="form-control form-control-sm input-latlong" value="${item.lat_long_pengerjaan || ''}" placeholder="-5.xxxx, 119.xxxx">
+                                    <input type="text" class="form-control form-control-sm input-latlong" value="${item.lat_long_pengerjaan || ''}" placeholder="Contoh: -5.148, 119.432">
                                 </td>
                                 <td>
-                                    <textarea class="form-control form-control-sm input-keterangan" rows="1" placeholder="cth: Lokasi galian pipa">${item.keterangan || ''}</textarea>
+                                    <textarea class="form-control form-control-sm input-keterangan" rows="1" placeholder="Isi keterangan pengerjaan...">${item.keterangan || ''}</textarea>
                                 </td>
                                 <td class="text-center">
                                     <button type="button" class="btn btn-sm ${statusBtn} btn-simpan" 
@@ -130,11 +127,11 @@ $(document).ready(function() {
         });
     });
 
-    // Proses Simpan per Baris Data (AJAX POST)
+    // Simpan Data Verifikasi per Baris
     $(document).on('click', '.btn-simpan', function() {
         let $btn = $(this);
         let $row = $btn.closest('tr');
-        let vehicleId = $('#vehicle_id').val();
+        let deviceId = $('#device_id').val();
         
         let waktuMulai = $btn.data('waktu');
         let koordinatGps = $btn.data('gps');
@@ -147,7 +144,7 @@ $(document).ready(function() {
             url: "{{ route('verifikasi.simpan') }}",
             type: "POST",
             data: {
-                vehicle_id: vehicleId,
+                device_id: deviceId,
                 waktu_mulai: waktuMulai,
                 koordinat_gps: koordinatGps,
                 lat_long_pengerjaan: latLongPengerjaan,
@@ -155,16 +152,14 @@ $(document).ready(function() {
             },
             success: function(response) {
                 if(response.status === 'success') {
-                    // Ubah visual tombol menjadi sukses sesaat
                     $btn.removeClass('btn-outline-primary btn-primary').addClass('btn-success').text('Tersimpan');
-                    
                     setTimeout(() => {
                         $btn.prop('disabled', false).removeClass('btn-success').addClass('btn-primary').text('Update');
-                    }, 1500);
+                    }, 1200);
                 }
             },
             error: function() {
-                alert('Gagal menyimpan data, periksa koneksi atau inputan Anda.');
+                alert('Gagal menyimpan data.');
                 $btn.prop('disabled', false).text('Simpan');
             }
         });
