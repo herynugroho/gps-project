@@ -180,34 +180,65 @@ class DashboardController extends Controller
 
     public function indexVerifikasi()
     {
-        // Ambil daftar kendaraan untuk pilihan dropdown
-        // Sesuaikan query ini dengan tabel kendaraan yang Bapak miliki
-        $vehicles = DB::table('vehicles')->select('id', 'name', 'plate_number')->get(); 
+        // PERBAIKAN: Mengambil data dari tabel 'devices' sesuai ERD Bapak
+        $devices = DB::table('devices')->select('id', 'name', 'plate_number')->get(); 
         
-        return view('management.verifikasi', compact('vehicles'));
-    }   
+        return view('management.verifikasi', compact('devices'));
+    }
 
     public function getDataVerifikasi(Request $request)
     {
-        $vehicleId = $request->vehicle_id;
+        $deviceId = $request->device_id;
         $date = $request->date; // Format: YYYY-MM-DD
 
-        // 1. Ambil data titik parkir dari log GPS berdasarkan logikanya Bapak sebelumnya
-        // Misal di sini kita asumsikan outputnya berupa kumpulan array/object titik parkir
-        $parkingPoints = $this->hitungTitikParkirDariGps($vehicleId, $date); 
+        // 1. Ambil data imei device terlebih dahulu
+        $device = DB::table('devices')->where('id', $deviceId)->first();
+        if (!$device) {
+            return response()->json([]);
+        }
 
-        // 2. Ambil data yang sudah pernah diverifikasi di database pada tanggal tersebut
+        // 2. Ambil semua log posisi gps berdasarkan imei dan tanggal terkait
+        $positions = DB::table('positions')
+            ->where('imei', $device->imei)
+            ->whereDate('gps_time', $date)
+            ->orderBy('gps_time', 'asc')
+            ->get();
+
+        $parkingPoints = [];
+        $lastP = null;
+
+        // 3. SALINAN LOGIKA FRONTEND BAPAK: Menghitung titik parkir (> 5 menit / 300 detik)
+        foreach ($positions as $p) {
+            if ($lastP) {
+                $t1 = strtotime($p->gps_time);
+                $t2 = strtotime($lastP->gps_time);
+                $timeDiff = $t1 - $t2; // Selisih dalam satuan detik
+
+                // 300 detik = 5 menit (Sama dengan 300000 ms di JS Bapak)
+                if ($timeDiff > 300) {
+                    $durasiMenit = floor($timeDiff / 60);
+                    
+                    $parkingPoints[] = (object)[
+                        'waktu_mulai' => $lastP->gps_time,
+                        'durasi' => $durasiMenit . ' mnt',
+                        'koordinat' => $lastP->latitude . ',' . $lastP->longitude
+                    ];
+                }
+            }
+            $lastP = $p;
+        }
+
+        // 4. Ambil data yang sudah pernah diverifikasi di database
+        // Kolom di ERD Bapak bernama 'vehicle_id', kita isi dengan ID dari tabel devices
         $verifiedData = DB::table('verifikasi_parkir')
-            ->where('vehicle_id', $vehicleId)
+            ->where('vehicle_id', $deviceId)
             ->whereDate('waktu_mulai', $date)
             ->get()
-            ->keyBy('waktu_mulai'); // Jadikan waktu_mulai sebagai key array agar mudah dicocokkan
+            ->keyBy('waktu_mulai');
 
-        // 3. Gabungkan data GPS dengan data inputan Verifikasi
+        // 5. Satukan data koordinat parkir dengan data inputan verifikasi manajemen
         $rekapVerifikasi = collect($parkingPoints)->map(function($point) use ($verifiedData) {
-            $waktuMulai = $point->waktu_mulai; // Pastikan formatnya YYYY-MM-DD HH:ii:ss (WITA)
-            
-            // Cek apakah sudah pernah diinput oleh manajemen sebelumnya
+            $waktuMulai = $point->waktu_mulai;
             $match = $verifiedData->get($waktuMulai);
 
             return [
@@ -221,27 +252,27 @@ class DashboardController extends Controller
         });
 
         return response()->json($rekapVerifikasi);
-    }                                                  
+    }
 
     public function simpanVerifikasi(Request $request)
     {
         $request->validate([
-            'vehicle_id' => 'required',
+            'device_id' => 'required',
             'waktu_mulai' => 'required',
             'koordinat_gps' => 'required',
         ]);
 
-        // Update jika sudah ada, Insert jika belum ada (Upsert)
+        // Simpan ke tabel verifikasi_parkir (vehicle_id diisi id device)
         DB::table('verifikasi_parkir')->updateOrInsert(
             [
-                'vehicle_id' => $request->vehicle_id,
+                'vehicle_id' => $request->device_id,
                 'waktu_mulai' => $request->waktu_mulai,
             ],
             [
                 'koordinat_gps' => $request->koordinat_gps,
                 'lat_long_pengerjaan' => $request->lat_long_pengerjaan,
                 'keterangan' => $request->keterangan,
-                'updated_at' => now() // Otomatis WITA sesuai setting server kita kemarin
+                'updated_at' => now() // Mengikuti WITA server
             ]
         );
 
