@@ -15,43 +15,10 @@
             color: #334155;
         }
         
-        /* Styling Header Bar ala Enterprise Edition */
+        /* BAR NAVBAR UTAMA (DIKUNCI AGAR PRESISI) */
         .enterprise-header {
-            background-color: #0b1329; /* Dark Navy premium sesuai gambar */
+            background-color: #0b1329; /* Navy premium sesuai dashboard */
             border-bottom: 1px solid #1e293b;
-        }
-        .logo-box {
-            background-color: #111827;
-            border: 1px solid #334155;
-            border-radius: 10px;
-            width: 42px;
-            height: 42px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
-        }
-        .brand-p {
-            font-weight: 900;
-            font-size: 1.35rem;
-            color: #ffffff;
-            letter-spacing: -1px;
-        }
-        .blue-dot {
-            color: #3b82f6;
-        }
-        .brand-title {
-            font-weight: 900;
-            font-size: 1.1rem;
-            letter-spacing: 0.5px;
-            color: #ffffff;
-        }
-        .brand-subtitle {
-            font-size: 9px;
-            font-weight: 700;
-            letter-spacing: 1.5px;
-            color: #60a5fa;
-            font-style: italic;
         }
         .btn-back-home {
             background-color: #1e293b;
@@ -158,37 +125,36 @@
 </head>
 <body>
 
-<header class="enterprise-header py-2.5 px-4 no-print shadow-sm mb-4">
+<header class="enterprise-header py-2 px-4 no-print shadow-sm mb-4">
     <div class="container-fluid d-flex align-items-center justify-content-between">
         <div class="d-flex align-items-center gap-3">
             <a href="/" class="btn btn-back-home p-0" title="Kembali ke Dashboard Utama">
                 <i class="fa-solid fa-house"></i>
             </a>
             
-            <div style="width: 1px; height: 28px; background-color: #334155;"></div>
+            <div style="width: 1px; height: 28px; background-color: #232d42;"></div>
 
-            <div class="p-6 bg-[#0B1120] text-white shrink-0 flex justify-between items-center">
-            <div class="flex items-center gap-3">
-                <svg viewBox="0 0 512 512" class="w-10 h-10 rounded-xl shadow-[0_0_15px_rgba(59,130,246,0.3)]">
+            <div class="d-flex align-items-center gap-2.5">
+                <svg viewBox="0 0 512 512" style="width: 38px; height: 38px; border-radius: 10px; box-shadow: 0 0 15px rgba(59,130,246,0.25); flex-shrink: 0;">
                     <rect width="512" height="512" fill="#0B1120" />
                     <g transform="translate(-19, -29)">
                         <path d="M120 110 h 120 c 71.8 0 130 58.2 130 130 v 0 c 0 71.8 -58.2 130 -130 130 h -50 v 90 c 0 11.05 -8.95 20 -20 20 h -40 c -11.05 0 -20 -8.95 -20 -20 V 130 c 0 -11.05 8.95 -20 20 -20 z M 190 190 v 100 h 50 c 27.6 0 50 -22.4 50 -50 v 0 c 0 -27.6 -22.4 -50 -50 -50 h -50 z" fill="#FFFFFF" />
                         <circle cx="410" cy="440" r="40" fill="#3B82F6" />
                     </g>
                 </svg>
-                <div>
-                    <h1 class="font-black text-sm uppercase tracking-wider leading-none">PRIMA TRACK<span class="text-blue-500">.</span></h1>
-                    <p class="text-[9px] text-blue-300 mt-1 uppercase font-bold italic">Enterprise Edition</p>
+                <div class="d-flex flex-column justify-content-center">
+                    <h1 class="mb-0 text-uppercase tracking-wider" style="font-size: 13px; font-weight: 900; color: #ffffff; line-height: 1.1;">
+                        PRIMA TRACK<span style="color: #3b82f6;">.</span>
+                    </h1>
+                    <p class="mb-0 text-uppercase font-bold italic" style="font-size: 9px; font-weight: 700; color: #60a5fa; margin-top: 1px; letter-spacing: 0.5px;">
+                        Enterprise Edition
+                    </p>
                 </div>
             </div>
-            <button onclick="toggleSidebar()" class="md:hidden w-8 h-8 rounded-lg bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition border border-slate-700 active:scale-95">
-                <i class="fa-solid fa-xmark text-lg"></i>
-            </button>
-        </div>
         </div>
         
         <div class="d-none d-sm-block">
-            <span class="badge bg-dark border border-secondary text-slate-400 font-monospace px-3 py-2 text-uppercase" style="font-size: 10px; letter-spacing: 1px; color: #94a3b8;">
+            <span class="badge bg-dark border border-secondary px-3 py-2 text-uppercase font-monospace" style="font-size: 10px; letter-spacing: 0.5px; color: #94a3b8; background-color: #111827 !important;">
                 <i class="fa-solid fa-user-shield text-primary me-1"></i> Management Panel
             </span>
         </div>
@@ -306,7 +272,6 @@ $(document).ready(function() {
                     html = '<tr><td colspan="7" class="text-center text-danger py-5"><i class="fa-solid fa-triangle-exclamation d-block fs-3 mb-2"></i> Tidak ada data log parkir (> 5 mnt) pada tanggal pilihan.</td></tr>';
                     $('#actionButtons').attr('style', 'display: none !important;');
                 } else {
-                    // Tampilkan tombol aksi cetak & excel jika baris data tersedia
                     $('#actionButtons').removeAttr('style');
 
                     data.forEach((item, index) => {
