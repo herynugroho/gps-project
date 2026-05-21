@@ -177,4 +177,74 @@ class DashboardController extends Controller
         // Kembalikan respons dari Wablas ke frontend GitHub Pages
         return response()->json($response->json(), $response->status());
     }
+
+    public function indexVerifikasi()
+    {
+        // Ambil daftar kendaraan untuk pilihan dropdown
+        // Sesuaikan query ini dengan tabel kendaraan yang Bapak miliki
+        $vehicles = DB::table('vehicles')->select('id', 'name', 'plate_number')->get(); 
+        
+        return view('management.verifikasi', compact('vehicles'));
+    }   
+
+    public function getDataVerifikasi(Request $request)
+    {
+        $vehicleId = $request->vehicle_id;
+        $date = $request->date; // Format: YYYY-MM-DD
+
+        // 1. Ambil data titik parkir dari log GPS berdasarkan logikanya Bapak sebelumnya
+        // Misal di sini kita asumsikan outputnya berupa kumpulan array/object titik parkir
+        $parkingPoints = $this->hitungTitikParkirDariGps($vehicleId, $date); 
+
+        // 2. Ambil data yang sudah pernah diverifikasi di database pada tanggal tersebut
+        $verifiedData = DB::table('verifikasi_parkir')
+            ->where('vehicle_id', $vehicleId)
+            ->whereDate('waktu_mulai', $date)
+            ->get()
+            ->keyBy('waktu_mulai'); // Jadikan waktu_mulai sebagai key array agar mudah dicocokkan
+
+        // 3. Gabungkan data GPS dengan data inputan Verifikasi
+        $rekapVerifikasi = collect($parkingPoints)->map(function($point) use ($verifiedData) {
+            $waktuMulai = $point->waktu_mulai; // Pastikan formatnya YYYY-MM-DD HH:ii:ss (WITA)
+            
+            // Cek apakah sudah pernah diinput oleh manajemen sebelumnya
+            $match = $verifiedData->get($waktuMulai);
+
+            return [
+                'waktu_mulai' => $waktuMulai,
+                'durasi' => $point->durasi,
+                'koordinat_gps' => $point->koordinat,
+                'lat_long_pengerjaan' => $match ? $match->lat_long_pengerjaan : '',
+                'keterangan' => $match ? $match->keterangan : '',
+                'is_verified' => $match ? true : false
+            ];
+        });
+
+        return response()->json($rekapVerifikasi);
+    }                                                  
+
+    public function simpanVerifikasi(Request $request)
+    {
+        $request->validate([
+            'vehicle_id' => 'required',
+            'waktu_mulai' => 'required',
+            'koordinat_gps' => 'required',
+        ]);
+
+        // Update jika sudah ada, Insert jika belum ada (Upsert)
+        DB::table('verifikasi_parkir')->updateOrInsert(
+            [
+                'vehicle_id' => $request->vehicle_id,
+                'waktu_mulai' => $request->waktu_mulai,
+            ],
+            [
+                'koordinat_gps' => $request->koordinat_gps,
+                'lat_long_pengerjaan' => $request->lat_long_pengerjaan,
+                'keterangan' => $request->keterangan,
+                'updated_at' => now() // Otomatis WITA sesuai setting server kita kemarin
+            ]
+        );
+
+        return response()->json(['status' => 'success', 'message' => 'Data verifikasi berhasil disimpan!']);
+    }
 }

@@ -34,6 +34,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/super-admin', [DashboardController::class, 'super_admin'])->name('command_center');
 
     Route::post('/proxy-wa', [DashboardController::class, 'sendProxy']);
+
+    Route::get('/management/verifikasi', [DashboardController::class, 'indexVerifikasi'])->name('verifikasi.index');
+    Route::get('/management/verifikasi/data', [DashboardController::class, 'getDataVerifikasi'])->name('verifikasi.data');
+    Route::post('/management/verifikasi/simpan', [DashboardController::class, 'simpanVerifikasi'])->name('verifikasi.simpan');
     
     // Rute Logout
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
