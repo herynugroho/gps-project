@@ -285,12 +285,13 @@ class DashboardController extends Controller
         $deviceId = $request->device_id;
         $date = $request->date;
 
+        // 1. Ambil data device berdasarkan ID
         $device = DB::table('devices')->where('id', $deviceId)->first();
         if (!$device) {
             return redirect()->back()->with('error', 'Device tidak ditemukan.');
         }
 
-        // 1. Ambil data log gps posisi
+        // 2. Ambil log posisi GPS
         $positions = DB::table('positions')
             ->where('imei', $device->imei)
             ->whereDate('gps_time', $date)
@@ -300,7 +301,7 @@ class DashboardController extends Controller
         $parkingPoints = [];
         $lastP = null;
 
-        // 2. Hitung titik parkir (> 5 menit)
+        // 3. Hitung interval titik parkir (> 5 menit)
         foreach ($positions as $p) {
             if ($lastP) {
                 $timeDiff = strtotime($p->gps_time) - strtotime($lastP->gps_time);
@@ -315,56 +316,67 @@ class DashboardController extends Controller
             $lastP = $p;
         }
 
-        // 3. Ambil data verifikasi dari database
+        // 4. Ambil data hasil verifikasi manajemen jika ada
         $verifiedData = DB::table('verifikasi_parkir')
             ->where('vehicle_id', $deviceId)
             ->whereDate('waktu_mulai', $date)
             ->get()
             ->keyBy('waktu_mulai');
 
-        // 4. Proses Stream Download Excel/CSV
-        $filename = "Rekap_Verifikasi_Parkir_" . str_replace(' ', '_', $device->plate_number) . "_" . $date . ".csv";
+        // ==========================================
+        // METODE AMAN: Tulis ke Memory Buffer Terlebih Dahulu
+        // ==========================================
+        $file = fopen('php://temp', 'r+');
         
-        $headers = [
+        // Tambahkan BOM (Byte Order Mark) agar karakter dibaca rapi oleh Microsoft Excel
+        fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+
+        // Judul & Metadata Laporan di Excel
+        fputcsv($file, ["LAPORAN VERIFIKASI TITIK PARKIR MANAJEMEN"]);
+        fputcsv($file, ["Kendaraan / Plat", $device->plate_number . " - " . $device->name]);
+        fputcsv($file, ["Tanggal Rekap", $date]);
+        fputcsv($file, []); // Jeda baris kosong
+
+        // Judul Kolom Tabel
+        fputcsv($file, [
+            "No", 
+            "Mulai Parkir (WITA)", 
+            "Durasi", 
+            "Koordinat Asli GPS", 
+            "Lat Long Pengerjaan (Verifikasi)", 
+            "Keterangan Lapangan", 
+            "Status Audit"
+        ]);
+
+        // Mengisi Baris Data
+        foreach ($parkingPoints as $index => $point) {
+            $match = $verifiedData->get($point['waktu_mulai']);
+            fputcsv($file, [
+                $index + 1,
+                $point['waktu_mulai'],
+                $point['durasi'],
+                $point['koordinat'],
+                $match ? $match->lat_long_pengerjaan : '',
+                $match ? $match->keterangan : '',
+                $match ? 'Sudah Diverifikasi' : 'Belum Diverifikasi'
+            ]);
+        }
+
+        // Baca isi file yang sudah dikumpulkan di memory
+        rewind($file);
+        $csvContent = stream_get_contents($file);
+        fclose($file);
+
+        // Format penamaan file download
+        $filename = "Rekap_Verifikasi_Parkir_" . str_replace([' ', '/'], '_', $device->plate_number) . "_" . $date . ".csv";
+
+        // Kirim response utuh ke browser
+        return response($csvContent, 200, [
             "Content-type"        => "text/csv; charset=utf-8",
-            "Content-Disposition" => "attachment; filename=$filename",
+            "Content-Disposition" => "attachment; filename=\"$filename\"",
             "Pragma"              => "no-cache",
             "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
             "Expires"             => "0"
-        ];
-
-        $callback = function() use ($parkingPoints, $verifiedData, $device) {
-            $file = fopen('php://output', 'w');
-            
-            // Tambahkan BOM agar Microsoft Excel membaca huruf/karakter UTF-8 dengan benar (tidak berantakan)
-            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
-
-            // Header Dokumen Excel
-            fputcsv($file, ["LAPORAN VERIFIKASI TITIK PARKIR MANAJEMEN"]);
-            fputcsv($file, ["Kendaraan / Plat", $device->plate_number . " - " . $device->name]);
-            fputcsv($file, ["Tanggal Rekap", $date]);
-            fputcsv($file, []); // baris kosong
-
-            // Header Tabel
-            fputcsv($file, ["No", "Mulai Parkir (WITA)", "Durasi", "Koordinat Asli GPS", "Lat Long Pengerjaan (Verifikasi)", "Keterangan Lapangan", "Status"]);
-
-            // Isi Tabel
-            foreach ($parkingPoints as $index => $point) {
-                $match = $verifiedData->get($point['waktu_mulai']);
-                fputcsv($file, [
-                    $index + 1,
-                    $point['waktu_mulai'],
-                    $point['durasi'],
-                    $point['koordinat'],
-                    $match ? $match->lat_long_pengerjaan : '',
-                    $match ? $match->keterangan : '',
-                    $match ? 'Sudah Diverifikasi' : 'Belum Diverifikasi'
-                ]);
-            }
-            
-            fclose($file);
-        };
-
-        return response()->stream($callback, 200, $headers);
+        ]);
     }
 }
