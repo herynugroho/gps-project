@@ -38,6 +38,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/management/verifikasi', [DashboardController::class, 'indexVerifikasi'])->name('verifikasi.index');
     Route::get('/management/verifikasi/data', [DashboardController::class, 'getDataVerifikasi'])->name('verifikasi.data');
     Route::post('/management/verifikasi/simpan', [DashboardController::class, 'simpanVerifikasi'])->name('verifikasi.simpan');
+
+    Route::get('/management/verifikasi/export', [DashboardController::class, 'exportVerifikasi'])->name('verifikasi.export');
     
     // Rute Logout
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');

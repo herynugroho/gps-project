@@ -99,6 +99,9 @@
             <a href="/devices" class="flex items-center justify-center gap-2 w-full py-3.5 bg-slate-900 rounded-xl text-[10px] font-black text-white hover:bg-slate-800 transition uppercase">
                 <i class="fa-solid fa-gear text-blue-400"></i> Kelola Armada
             </a>
+            <a href="/devices" class="flex items-center justify-center gap-2 w-full py-3.5 bg-slate-900 rounded-xl text-[10px] font-black text-white hover:bg-slate-800 transition uppercase">
+                <i class="fa-solid fa-gear text-blue-400"></i> Verifikasi Parkir
+            </a>
             <form method="POST" action="{{ url('/logout') }}" class="m-0">
                 @csrf
                 <button type="submit" class="flex items-center justify-center gap-2 w-full py-3.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-[10px] font-black transition uppercase border border-red-100">

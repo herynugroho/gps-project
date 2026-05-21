@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DashboardController extends Controller
 {
@@ -277,5 +278,93 @@ class DashboardController extends Controller
         );
 
         return response()->json(['status' => 'success', 'message' => 'Data verifikasi berhasil disimpan!']);
+    }
+
+    public function exportVerifikasi(Request $request)
+    {
+        $deviceId = $request->device_id;
+        $date = $request->date;
+
+        $device = DB::table('devices')->where('id', $deviceId)->first();
+        if (!$device) {
+            return redirect()->back()->with('error', 'Device tidak ditemukan.');
+        }
+
+        // 1. Ambil data log gps posisi
+        $positions = DB::table('positions')
+            ->where('imei', $device->imei)
+            ->whereDate('gps_time', $date)
+            ->orderBy('gps_time', 'asc')
+            ->get();
+
+        $parkingPoints = [];
+        $lastP = null;
+
+        // 2. Hitung titik parkir (> 5 menit)
+        foreach ($positions as $p) {
+            if ($lastP) {
+                $timeDiff = strtotime($p->gps_time) - strtotime($lastP->gps_time);
+                if ($timeDiff > 300) {
+                    $parkingPoints[] = [
+                        'waktu_mulai' => $lastP->gps_time,
+                        'durasi' => floor($timeDiff / 60) . ' mnt',
+                        'koordinat' => $lastP->latitude . ',' . $lastP->longitude
+                    ];
+                }
+            }
+            $lastP = $p;
+        }
+
+        // 3. Ambil data verifikasi dari database
+        $verifiedData = DB::table('verifikasi_parkir')
+            ->where('vehicle_id', $deviceId)
+            ->whereDate('waktu_mulai', $date)
+            ->get()
+            ->keyBy('waktu_mulai');
+
+        // 4. Proses Stream Download Excel/CSV
+        $filename = "Rekap_Verifikasi_Parkir_" . str_replace(' ', '_', $device->plate_number) . "_" . $date . ".csv";
+        
+        $headers = [
+            "Content-type"        => "text/csv; charset=utf-8",
+            "Content-Disposition" => "attachment; filename=$filename",
+            "Pragma"              => "no-cache",
+            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
+            "Expires"             => "0"
+        ];
+
+        $callback = function() use ($parkingPoints, $verifiedData, $device) {
+            $file = fopen('php://output', 'w');
+            
+            // Tambahkan BOM agar Microsoft Excel membaca huruf/karakter UTF-8 dengan benar (tidak berantakan)
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+
+            // Header Dokumen Excel
+            fputcsv($file, ["LAPORAN VERIFIKASI TITIK PARKIR MANAJEMEN"]);
+            fputcsv($file, ["Kendaraan / Plat", $device->plate_number . " - " . $device->name]);
+            fputcsv($file, ["Tanggal Rekap", $date]);
+            fputcsv($file, []); // baris kosong
+
+            // Header Tabel
+            fputcsv($file, ["No", "Mulai Parkir (WITA)", "Durasi", "Koordinat Asli GPS", "Lat Long Pengerjaan (Verifikasi)", "Keterangan Lapangan", "Status"]);
+
+            // Isi Tabel
+            foreach ($parkingPoints as $index => $point) {
+                $match = $verifiedData->get($point['waktu_mulai']);
+                fputcsv($file, [
+                    $index + 1,
+                    $point['waktu_mulai'],
+                    $point['durasi'],
+                    $point['koordinat'],
+                    $match ? $match->lat_long_pengerjaan : '',
+                    $match ? $match->keterangan : '',
+                    $match ? 'Sudah Diverifikasi' : 'Belum Diverifikasi'
+                ]);
+            }
+            
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 }
