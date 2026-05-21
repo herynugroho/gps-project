@@ -14,6 +14,9 @@
     <style>
         body { font-family: 'Inter', sans-serif; height: 100dvh; margin: 0; display: flex; flex-direction: column; overflow: hidden; }
         
+        .parking-marker { background: #f59e0b; color: white; border: 2px solid white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.3); font-size: 10px; cursor: pointer; transition: all 0.2s; }
+        .parking-marker:hover { transform: scale(1.3); z-index: 1000 !important; background: #d97706; }
+        
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .highlight-row { background-color: #fffbeb !important; border-left: 4px solid #f59e0b !important; transition: all 0.3s ease; }
         
@@ -63,20 +66,25 @@
 </head>
 <body class="bg-slate-50 relative">
 
+    <!-- Header Laporan (Cetak) -->
     <div class="print-only report-header">
         <h1 style="font-size: 24px; font-weight: 900; color: #0f172a; text-transform: uppercase;">LAPORAN PERSINGGAHAN ARMADA</h1>
         <p style="font-size: 14px; color: #64748b;">Unit: {{ $device->name }} ({{ $device->plate_number }}) | Periode: <span id="print-date">-</span></p>
         <hr style="margin: 20px 0; border: 1px solid #e2e8f0;">
     </div>
 
+    <!-- MAIN LAYOUT -->
     <div class="flex flex-col lg:flex-row h-full w-full overflow-hidden relative main-wrapper">
 
+        <!-- MAP LAYER -->
         <div id="map-container" class="absolute inset-0 lg:relative lg:flex-1 z-0">
             <div id="map" class="w-full h-full"></div>
         </div>
         
+        <!-- SIDEBAR / FLOATING PANELS -->
         <aside class="flex flex-col w-full lg:w-[480px] z-20 shrink-0 lg:h-full lg:shadow-2xl pointer-events-none lg:pointer-events-auto bg-transparent lg:bg-white order-1 side-panel">
             
+            <!-- TOP HEADER & FILTER -->
             <div class="p-4 lg:p-6 bg-slate-900 text-white shrink-0 pointer-events-auto shadow-lg lg:shadow-none z-30 no-print">
                 <div class="flex items-center justify-between mb-2 lg:mb-6">
                     <div class="flex items-center gap-4">
@@ -93,6 +101,7 @@
                     </button>
                 </div>
 
+                <!-- Form Filter -->
                 <div class="space-y-3 hidden lg:block mt-4 lg:mt-0" id="filter-box">
                     <select id="mode-selector" onchange="toggleInputs()" class="w-full bg-slate-800 text-[11px] font-black uppercase px-4 py-3 rounded-xl border border-slate-700 outline-none">
                         <option value="today">Hari Ini</option>
@@ -119,11 +128,14 @@
 
             <div class="flex-1 lg:hidden no-print"></div>
 
+            <!-- BOTTOM SHEET (STATS & DETAILS) -->
             <div class="bg-white pointer-events-auto rounded-t-3xl lg:rounded-none shadow-[0_-15px_30px_rgba(0,0,0,0.15)] lg:shadow-none flex flex-col z-30 transition-all duration-300 h-[45vh] lg:h-full lg:flex-1 lg:min-h-0" id="bottom-sheet">
                 
                 <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-2 lg:hidden cursor-pointer no-print" onclick="toggleSheet()"></div>
 
+                <!-- Stats -->
                 <div class="px-4 pb-3 pt-1 lg:p-5 border-b border-slate-100 shrink-0">
+                    <!-- Menjadi 4 Kolom: Sinyal, Parkir, Jarak, BBM -->
                     <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 lg:gap-3">
                         <div class="bg-slate-50 p-2 lg:p-3 rounded-2xl border border-slate-100 text-center flex flex-col justify-center">
                             <p class="text-[8px] text-slate-400 font-black uppercase mb-1 tracking-widest">Sinyal</p>
@@ -137,6 +149,7 @@
                             <p class="text-[8px] text-blue-500 font-black uppercase mb-1 tracking-widest">Jarak</p>
                             <p class="font-black text-blue-600 text-sm leading-none"><span id="stat-dist">0</span> <small class="text-[8px]">km</small></p>
                         </div>
+                        <!-- KOTAK ESTIMASI BBM -->
                         <div class="bg-emerald-50 p-2 lg:p-3 rounded-2xl border border-emerald-100 text-center flex flex-col justify-center">
                             <p class="text-[8px] text-emerald-500 font-black uppercase mb-1 tracking-widest">Est. BBM</p>
                             <p class="font-black text-emerald-600 text-sm leading-none mb-1"><span id="stat-fuel-liters">0</span> <small class="text-[8px]">L</small></p>
@@ -145,13 +158,13 @@
                     </div>
                 </div>
 
+                <!-- List Persinggahan -->
                 <div class="flex-1 overflow-y-auto p-4 lg:p-5 no-scrollbar bg-white lg:min-h-0" id="detail-list-container">
                     <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 no-print">Detail Persinggahan</h3>
                     <div class="overflow-hidden rounded-2xl border border-slate-100 shadow-sm" id="detail-list">
                         <table class="min-w-full divide-y divide-slate-100 report-table">
                             <thead class="bg-slate-50">
                                 <tr>
-                                    <th class="px-3 py-3 text-center text-[9px] font-black text-slate-400 uppercase" width="6%">No</th>
                                     <th class="px-3 py-3 text-left text-[9px] font-black text-slate-400 uppercase">Mulai</th>
                                     <th class="px-3 py-3 text-left text-[9px] font-black text-slate-400 uppercase">Durasi</th>
                                     <th class="px-3 py-3 text-left text-[9px] font-black text-slate-400 uppercase">Koordinat</th>
@@ -159,7 +172,8 @@
                                 </tr>
                             </thead>
                             <tbody id="parking-list" class="bg-white divide-y divide-slate-50">
-                                </tbody>
+                                <!-- JS Content -->
+                            </tbody>
                         </table>
                     </div>
                 </div>
@@ -170,14 +184,19 @@
     </div>
 
     <script>
+        // --- KONFIGURASI BBM ---
+        // Mengambil Rasio BBM dari Database (Misal 10 berarti 1:10 km)
+        // Default ke 10 jika nilai null/kosong.
         const FUEL_RATIO = {{ $device->fuel_ratio ?? 10.0 }}; 
+        
+        // Harga BBM (Silakan disesuaikan, misal harga Pertalite/Dexlite)
         const FUEL_PRICE_PER_LITER = 10000; 
+        // -----------------------
 
         var map = L.map('map', { zoomControl: false }).setView([-5.147, 119.432], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        // PERBAIKAN: Mengubah struktur single path menjadi array penampung multi-line
-        var pathLines = [];
+        var pathLine = null;
         var markers = [];
         var parkingMarkers = [];
         var isSheetCollapsed = false;
@@ -229,12 +248,7 @@
         }
 
         async function loadHistory(queryString, displayDate = "Hari Ini", mode = "today") {
-            // PERBAIKAN: Hapus semua potongan garis rute lama di peta
-            if (pathLines.length > 0) {
-                pathLines.forEach(line => map.removeLayer(line));
-            }
-            pathLines = [];
-
+            if (pathLine) map.removeLayer(pathLine);
             markers.forEach(m => map.removeLayer(m));
             parkingMarkers.forEach(m => map.removeLayer(m));
             markers = []; parkingMarkers = [];
@@ -250,7 +264,7 @@
                 parkingTable.innerHTML = '';
                 
                 if (!Array.isArray(data) || data.length === 0) {
-                    parkingTable.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-300 text-xs italic">Data perjalanan tidak ditemukan untuk periode ini.</td></tr>';
+                    parkingTable.innerHTML = '<tr><td colspan="4" class="p-8 text-center text-slate-300 text-xs italic">Data perjalanan tidak ditemukan untuk periode ini.</td></tr>';
                     document.getElementById('stat-points').innerText = '0';
                     document.getElementById('stat-parking').innerText = '0';
                     document.getElementById('stat-dist').innerText = '0';
@@ -259,22 +273,13 @@
                     return;
                 }
 
-                // PERBAIKAN: Palette Warna Rute Unik untuk Membedakan Jalur Antar Titik Singgah
-                const routeColors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6'];
-                
                 let points = [];
                 let pEvents = [];
                 let lastP = null;
-                let totalD = 0; 
-                
-                let currentSegmentPoints = [];
-                let segmentIndex = 0;
+                let totalD = 0; // Total Distance in Meters
 
                 data.forEach((p) => {
                     const pos = [parseFloat(p.latitude), parseFloat(p.longitude)];
-                    points.push(pos);
-                    currentSegmentPoints.push(pos);
-
                     if (lastP) {
                         const t1 = new Date(p.gps_time.replace(' ', 'T')).getTime();
                         const t2 = new Date(lastP.gps_time.replace(' ', 'T')).getTime();
@@ -282,69 +287,25 @@
                         
                         if (timeDiff > 300000) { 
                             pEvents.push({ lat: lastP.latitude, lng: lastP.longitude, start: lastP.gps_time, dur: timeDiff });
-                            
-                            // PERBAIKAN: Gambar jalur segmen ini sebelum beralih ke segmen pasca parkir berikutnya
-                            if (currentSegmentPoints.length > 1) {
-                                let poly = L.polyline(currentSegmentPoints, { 
-                                    color: routeColors[segmentIndex % routeColors.length], 
-                                    weight: 5, 
-                                    opacity: 0.85 
-                                }).addTo(map);
-                                pathLines.push(poly);
-                            }
-
-                            // Reset koordinat segmen baru dimulai dari lokasi parkir ini
-                            currentSegmentPoints = [pos];
-                            segmentIndex++;
                         }
                         totalD += L.latLng([lastP.latitude, lastP.longitude]).distanceTo(pos);
                     }
+                    points.push(pos);
                     lastP = p;
                 });
 
-                // Gambar potongan jalur segmen yang paling terakhir
-                if (currentSegmentPoints.length > 1) {
-                    let poly = L.polyline(currentSegmentPoints, { 
-                        color: routeColors[segmentIndex % routeColors.length], 
-                        weight: 5, 
-                        opacity: 0.85 
-                    }).addTo(map);
-                    pathLines.push(poly);
-                }
-
-                // Pembuat isi tabel detail persinggahan
-                let lastDateLabel = '';
+                pathLine = L.polyline(points, { color: '#3b82f6', weight: 5, opacity: 0.8 }).addTo(map);
 
                 pEvents.forEach((evt, i) => {
                     const rowId = `row-${i}`;
-                    const dateLabel = evt.start.substring(0, 10); // Format YYYY-MM-DD
-                    const timeLabel = evt.start.substring(11, 16); // Format HH:MM
+                    const timeLabel = evt.start.substring(11, 16);
                     const durLabel = Math.floor(evt.dur/60000) + ' mnt';
                     const latLngLabel = `${parseFloat(evt.lat).toFixed(5)}, <br>${parseFloat(evt.lng).toFixed(5)}`;
-                    const gUrl = `https://www.google.com/maps/search/?api=1&query=${evt.lat},${evt.lng}`;
-                    
-                    let currentTrackColor = routeColors[i % routeColors.length];
+                    const gUrl = `https://www.google.com/maps?q=${evt.lat},${evt.lng}`;
 
-                    // PERBAIKAN: Penyisipan Garis Pembatas Antar Tanggal (Khusus Rentang Tanggal)
-                    if (dateLabel !== lastDateLabel) {
-                        parkingTable.innerHTML += `
-                            <tr class="bg-slate-100 font-bold no-print">
-                                <td colspan="5" class="px-3 py-2 text-[10px] text-slate-500 bg-slate-100 font-black text-center tracking-wider">
-                                    <i class="fa-solid fa-calendar-days mr-1"></i> TANGGAL: ${dateLabel}
-                                </td>
-                            </tr>
-                        `;
-                        lastDateLabel = dateLabel;
-                    }
-
-                    // PERBAIKAN: Menambahkan kolom Nomor Urut (i + 1) di baris paling kiri tabel
                     parkingTable.innerHTML += `
                         <tr id="${rowId}" onclick="focusLocation(${evt.lat}, ${evt.lng}, '${rowId}')" class="cursor-pointer hover:bg-slate-50 transition border-l-4 border-transparent group">
-                            <td class="px-3 py-4 text-[11px] font-bold text-slate-400 text-center">${i + 1}</td>
-                            <td class="px-3 py-4 text-[11px] font-bold text-slate-700">
-                                <span class="inline-block w-2 h-2 rounded-full me-1" style="background-color: ${currentTrackColor}"></span>
-                                ${timeLabel}
-                            </td>
+                            <td class="px-3 py-4 text-[11px] font-bold text-slate-700">${timeLabel}</td>
                             <td class="px-3 py-4 text-[10px] font-black text-amber-500 uppercase">${durLabel}</td>
                             <td class="px-3 py-4 text-[9px] font-mono text-slate-400">${latLngLabel}</td>
                             <td class="px-3 py-4 text-right no-print">
@@ -355,36 +316,22 @@
                         </tr>
                     `;
 
-                    // PERBAIKAN: Mengganti Huruf 'P' Menjadi Nomor Urut Marker (P1, P2, P3...) Berwarna Sinkron
                     const m = L.marker([evt.lat, evt.lng], {
-                        icon: L.divIcon({ 
-                            className: 'custom-marker-wrapper', 
-                            html: `<div style="background-color: ${currentTrackColor}; color: white; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 10px; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.35);">P${i + 1}</div>`, 
-                            iconSize: [26, 26], 
-                            iconAnchor: [13, 13] 
-                        })
+                        icon: L.divIcon({ className: 'parking-marker', html: 'P', iconSize: [22, 22], iconAnchor: [11, 11] })
                     }).addTo(map);
 
-                    // Perbaikan teks button tooltip di dalam popup agar berwarna putih kontras
                     m.bindPopup(`
-                        <div class="p-2 min-w-[140px]">
-                            <p class="text-[10px] font-black uppercase mb-1" style="color: ${currentTrackColor}">AREA PARKIR P${i + 1}</p>
+                        <div class="p-2 min-w-[130px]">
+                            <p class="text-[10px] font-black text-amber-600 uppercase mb-1">AREA PARKIR</p>
                             <p class="text-[11px] font-bold text-slate-800">Mulai: ${timeLabel} WITA</p>
                             <p class="text-[11px] font-bold text-slate-800">Durasi: ${durLabel}</p>
-                            <div class="mt-2 text-center">
-                                <a href="${gUrl}" target="_blank" class="inline-block bg-blue-600 px-2 py-1 rounded text-[9px] font-bold text-center shadow-md shadow-blue-200" style="color: white !important; text-decoration: none !important;">
-                                    <i class="fa-solid fa-map-location-dot mr-1"></i> LIHAT GOOGLE MAPS
-                                </a>
-                            </div>
                         </div>
                     `);
                     m.on('click', () => highlightRow(rowId));
                     parkingMarkers.push(m);
                 });
 
-                if (points.length > 0) {
-                    map.fitBounds(L.polyline(points).getBounds(), { padding: [50, 50] });
-                }
+                map.fitBounds(pathLine.getBounds(), { padding: [50, 50] });
                 
                 // --- UPDATE STATISTIK UI ---
                 const distKm = totalD / 1000;
@@ -395,6 +342,7 @@
                 document.getElementById('stat-parking').innerText = pEvents.length;
                 document.getElementById('stat-dist').innerText = distKm.toFixed(2);
                 
+                // Update Statistik BBM
                 document.getElementById('stat-fuel-liters').innerText = estLiters.toFixed(1);
                 document.getElementById('stat-fuel-cost').innerText = 'Rp ' + estCost.toLocaleString('id-ID', {maximumFractionDigits: 0});
 
