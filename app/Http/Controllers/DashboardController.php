@@ -323,19 +323,19 @@ class DashboardController extends Controller
             ->get()
             ->keyBy('waktu_mulai');
 
-        // ==========================================
-        // METODE AMAN: Tulis ke Memory Buffer Terlebih Dahulu
-        // ==========================================
+        // =========================================================
+        // METODE AMAN: Tulis ke Memory Buffer Menggunakan Titik Koma (;)
+        // =========================================================
         $file = fopen('php://temp', 'r+');
         
         // Tambahkan BOM (Byte Order Mark) agar karakter dibaca rapi oleh Microsoft Excel
         fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
 
-        // Judul & Metadata Laporan di Excel
-        fputcsv($file, ["LAPORAN VERIFIKASI TITIK PARKIR MANAJEMEN"]);
-        fputcsv($file, ["Kendaraan / Plat", $device->plate_number . " - " . $device->name]);
-        fputcsv($file, ["Tanggal Rekap", $date]);
-        fputcsv($file, []); // Jeda baris kosong
+        // Judul & Metadata Laporan di Excel (Tambahkan parameter ';' di bagian akhir fputcsv)
+        fputcsv($file, ["LAPORAN VERIFIKASI TITIK PARKIR MANAJEMEN"], ';');
+        fputcsv($file, ["Kendaraan / Plat", $device->plate_number . " - " . $device->name], ';');
+        fputcsv($file, ["Tanggal Rekap", $date], ';');
+        fputcsv($file, [], ';'); // Jeda baris kosong
 
         // Judul Kolom Tabel
         fputcsv($file, [
@@ -346,7 +346,7 @@ class DashboardController extends Controller
             "Lat Long Pengerjaan (Verifikasi)", 
             "Keterangan Lapangan", 
             "Status Audit"
-        ]);
+        ], ';');
 
         // Mengisi Baris Data
         foreach ($parkingPoints as $index => $point) {
@@ -359,7 +359,7 @@ class DashboardController extends Controller
                 $match ? $match->lat_long_pengerjaan : '',
                 $match ? $match->keterangan : '',
                 $match ? 'Sudah Diverifikasi' : 'Belum Diverifikasi'
-            ]);
+            ], ';');
         }
 
         // Baca isi file yang sudah dikumpulkan di memory
