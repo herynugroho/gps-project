@@ -6,7 +6,6 @@
     <title>Verifikasi Titik Parkir - Prima Track</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <meta name="csrf-token" content="{{ csrf_token() }}">
     
     <style>
@@ -16,7 +15,7 @@
             color: #334155;
         }
         
-        /* BAR NAVBAR UTAMA */
+        /* BAR NAVBAR UTAMA (DIKUNCI AGAR PRESISI) */
         .enterprise-header {
             background-color: #0b1329; /* Navy premium sesuai dashboard */
             border-bottom: 1px solid #1e293b;
@@ -221,10 +220,10 @@
                             <th width="4%" class="text-center py-3">No</th>
                             <th width="18%">Mulai Parkir (WITA)</th>
                             <th width="12%">Durasi Singgah</th>
-                            <th width="24%">Koordinat GPS Asli</th>
-                            <th width="18%">Lat Long Pengerjaan Riil (Kolom Tambahan)</th>
-                            <th width="20%">Keterangan Lapangan (Kolom Tambahan)</th>
-                            <th width="4%" class="text-center no-print">Aksi</th>
+                            <th width="20%">Koordinat GPS Asli</th>
+                            <th width="22%">Lat Long Pengerjaan Riil (Kolom Tambahan)</th>
+                            <th width="24%">Keterangan Lapangan (Kolom Tambahan)</th>
+                            <th width="5%" class="text-center no-print">Aksi</th>
                         </tr>
                     </thead>
                     <tbody id="tableBody">
@@ -241,37 +240,8 @@
     </div>
 </div>
 
-<div class="modal fade no-print" id="compareModal" tabindex="-1" aria-labelledby="compareModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content" style="border-radius: 14px; border: none; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
-            <div class="modal-header bg-dark text-white p-3">
-                <h5 class="modal-title fs-6 fw-bold" id="compareModalLabel"><i class="fa-solid fa-code-compare me-1 text-primary"></i> Perbandingan Deviasi Jarak</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body p-0 position-relative">
-                <div class="bg-light p-3 text-center border-bottom">
-                    <span id="modalDistanceText" class="fs-6 fw-bold text-dark">Menghitung deviasi...</span>
-                </div>
-                <div id="modalMapContainer" style="width: 100%; height: 380px; background-color: #f1f5f9;"></div>
-            </div>
-            <div class="modal-footer bg-light p-2 d-flex justify-content-between px-3">
-                <div class="small text-muted" style="font-size: 11px;">
-                    <span class="badge bg-primary px-1.5 py-1 rounded-circle">●</span> GPS Asli
-                    <span class="badge bg-danger px-1.5 py-1 rounded-circle ms-2">●</span> Lokasi Kerja Lapangan
-                </div>
-                <button type="button" class="btn btn-sm btn-secondary fw-semibold px-3" style="border-radius: 8px;" data-bs-dismiss="modal">Tutup</button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
 <script>
-var modalMap = null; // Handler instance peta modal compare
-
 $(document).ready(function() {
     $.ajaxSetup({
         headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') }
@@ -284,6 +254,7 @@ $(document).ready(function() {
         let date = $('#date').val();
         let deviceText = $('#device_id option:selected').data('info');
 
+        // Pemetaan data teks ke kop surat cetak
         $('#print-txt-device').text(deviceText);
         $('#print-txt-date').text(date);
 
@@ -315,14 +286,9 @@ $(document).ready(function() {
                                 <td>
                                     <div class="d-flex align-items-center justify-content-between">
                                         <small class="text-muted text-monospace">${item.koordinat_gps}</small>
-                                        <div class="d-flex gap-1 no-print">
-                                            <a href="https://maps.google.com/?q=${item.koordinat_gps}" target="_blank" class="btn btn-light border py-1 px-2 btn-sm" title="Buka di Google Maps" style="font-size: 11px;">
-                                                <i class="fa-solid fa-map-location-dot text-danger"></i> Map
-                                            </a>
-                                            <button type="button" class="btn btn-light border py-1 px-2 btn-sm btn-compare" data-gps="${item.koordinat_gps}" title="Bandingkan dengan Lokasi Riil" style="font-size: 11px;">
-                                                <i class="fa-solid fa-code-compare text-primary"></i> Compare
-                                            </button>
-                                        </div>
+                                        <a href="https://maps.google.com/?q=${item.koordinat_gps}" target="_blank" class="btn btn-light border py-1 px-2 btn-sm ms-2 no-print" title="Validasi Posisi di Google Maps" style="font-size: 11px;">
+                                            <i class="fa-solid fa-map-location-dot text-danger"></i> Map
+                                        </a>
                                     </div>
                                 </td>
                                 <td>
@@ -345,84 +311,6 @@ $(document).ready(function() {
                 $('#tableBody').html(html);
             }
         });
-    });
-
-    // ==========================================
-    // LOGIKA EVENT KLIK TOMBOL COMPARE (AJAX FRONTEND)
-    // ==========================================
-    $(document).on('click', '.btn-compare', function() {
-        let $row = $(this).closest('tr');
-        let gpsRaw = $(this).data('gps');
-        let realRaw = $row.find('.input-latlong').val();
-
-        // Validasi inputan kolom Lat Long tambahan
-        if (!realRaw || !realRaw.includes(',')) {
-            alert('Silakan masukkan koordinat Lat Long Pengerjaan Riil (format: latitude,longitude) di kolom sebelahnya terlebih dahulu untuk membandingkan!');
-            return;
-        }
-
-        let gpsArr = gpsRaw.split(',');
-        let gpsLat = parseFloat(gpsArr[0]);
-        let gpsLng = parseFloat(gpsArr[1]);
-
-        let realArr = realRaw.split(',');
-        let realLat = parseFloat(realArr[0].trim());
-        let realLng = parseFloat(realArr[1].trim());
-
-        if (isNaN(gpsLat) || isNaN(gpsLng) || isNaN(realLat) || isNaN(realLng)) {
-            alert('Format penulisan koordinat salah! Pastikan menggunakan format angka desimal dipisahkan koma (cth: -5.148, 119.432)');
-            return;
-        }
-
-        // Tampilkan Modal Bootstrap
-        let myModal = new bootstrap.Modal(document.getElementById('compareModal'));
-        myModal.show();
-
-        // Render Peta Leaflet di dalam Modal pasca-animasi transisi modal terbuka selesai
-        setTimeout(() => {
-            // Hapus instansi peta modal lama jika sudah pernah terbuka sebelumnya (mencegah memory leak)
-            if (modalMap !== null) {
-                modalMap.remove();
-            }
-
-            modalMap = L.map('modalMapContainer', { zoomControl: true }).setView([gpsLat, gpsLng], 16);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(modalMap);
-
-            let p1 = L.latLng(gpsLat, gpsLng);
-            let p2 = L.latLng(realLat, realLng);
-
-            // Hitung Jarak Deviasi antar 2 Koordinat (Meter)
-            let distanceMeters = p1.distanceTo(p2);
-            let textJarak = distanceMeters > 1000 
-                ? (distanceMeters / 1000).toFixed(2) + ' km' 
-                : Math.round(distanceMeters) + ' meter';
-
-            $('#modalDistanceText').html(`Selisih Jarak Penyimpangan (Deviasi): <strong class="text-danger fs-5 ms-1">${textJarak}</strong>`);
-
-            // Desain Marker Pin Custom Premium (Sinkron seperti halaman history)
-            const blueIcon = L.divIcon({
-                className: 'custom-pin',
-                html: `<div style="background-color: #3b82f6; color: white; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 10px; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);"><i class="fa-solid fa-satellite-dish"></i></div>`,
-                iconSize: [26, 26], iconAnchor: [13, 13]
-            });
-
-            const redIcon = L.divIcon({
-                className: 'custom-pin',
-                html: `<div style="background-color: #ef4444; color: white; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 10px; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);"><i class="fa-solid fa-person-digging"></i></div>`,
-                iconSize: [26, 26], iconAnchor: [13, 13]
-            });
-
-            // Tanam Marker ke Peta
-            L.marker(p1, { icon: blueIcon }).addTo(modalMap).bindPopup('<b>Posisi GPS Asli</b><br>'+gpsRaw);
-            L.marker(p2, { icon: redIcon }).addTo(modalMap).bindPopup('<b>Lokasi Kerja Lapangan</b><br>'+realRaw);
-
-            // Gambar Garis Putus-Putus Merah Penghubung Deviasi Jarak
-            L.polyline([p1, p2], { color: '#ef4444', weight: 3, dashArray: '6, 9', opacity: 0.85 }).addTo(modalMap);
-
-            // Zoom otomatis agar kedua titik pas terlihat seimbang di layar peta
-            modalMap.fitBounds(L.featureGroup([L.marker(p1), L.marker(p2)]).getBounds(), { padding: [50, 50] });
-            modalMap.invalidateSize();
-        }, 300);
     });
 
     // Proses AJAX Simpan atau Update Verifikasi per Baris Data
@@ -463,12 +351,12 @@ $(document).ready(function() {
         });
     });
 
-    // Event Handler Cetak
+    // Event Handler Cetak/Print Preview
     $('#btnPrint').on('click', function() {
         window.print();
     });
 
-    // Event Handler Ekspor File Excel
+    // Event Handler Ekspor File Excel Stream
     $('#btnExport').on('click', function() {
         let deviceId = $('#device_id').val();
         let date = $('#date').val();
