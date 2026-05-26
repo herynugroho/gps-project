@@ -155,29 +155,27 @@ class DashboardController extends Controller
 
     public function sendProxy(Request $request)
     {
-        // 1. Validasi input dinamis
+        // 1. Validasi Input Dinamis
         $request->validate([
             'domain'  => 'required|url',
             'token'   => 'required|string',
             'phone'   => 'required|string',
             'action'  => 'nullable|string|in:check,send',
-            // Message hanya diwajibkan jika action-nya adalah mengirim pesan
             'message' => 'required_if:action,send|string', 
         ]);
 
         $domain = rtrim($request->input('domain'), '/');
         $token  = $request->input('token');
         $phone  = $request->input('phone');
-        $action = $request->input('action', 'send'); // Default fallback ke 'send'
+        $action = $request->input('action', 'send');
 
-        // 2. LOGIKA CEK NOMOR AKTIF (Sesuai Dokumentasi GET Wablas)
+        // 2. FASE CEK NOMOR AKTIF
         if ($action === 'check') {
-            $url = 'https://bdg.wablas.com/check-phone-number';
+            $url = 'https://phone.wablas.com/check-phone-number';
 
-            // Menggunakan withoutVerifying() sebagai padanan CURLOPT_SSL_VERIFYPEER => 0
             $response = Http::withoutVerifying()->withHeaders([
                 'Authorization' => $token,
-                'url'           => $domain, // Wajib disisipkan di header sesuai aturan Wablas
+                'url'           => $domain,
                 'Accept'        => 'application/json',
             ])->get($url, [
                 'phones' => $phone
@@ -186,24 +184,29 @@ class DashboardController extends Controller
             $resData = $response->json();
             $isValid = false;
 
-            // Menerjemahkan format array Wablas ke boolean untuk Frontend
+            // Menerjemahkan jawaban Wablas berdasarkan DOKUMENTASI TERBARU
             if (isset($resData['data']) && is_array($resData['data'])) {
                 foreach ($resData['data'] as $item) {
-                    if (isset($item['status']) && strtolower($item['status']) === 'valid') {
+                    // PERUBAHAN KRUSIAL: Mencari kata 'online' bukan 'valid'
+                    if (isset($item['status']) && strtolower($item['status']) === 'online') {
                         $isValid = true;
                         break;
                     }
                 }
+            } else {
+                // SMART BYPASS: Jika Wablas Error (misal 404 / Server Down), 
+                // asumsikan nomor Valid agar antrean pengiriman tidak mandek.
+                $isValid = true;
             }
 
             return response()->json([
                 'status'     => $isValid,
-                'message'    => $isValid ? 'Valid' : 'Invalid',
+                'message'    => $isValid ? 'Online / Bypassed' : 'Offline',
                 'raw_wablas' => $resData
             ], 200);
         } 
 
-        // 3. LOGIKA KIRIM PESAN (Sesuai Dokumentasi POST Wablas)
+        // 3. FASE KIRIM PESAN UTAMA
         else {
             $url = $domain . '/api/send-message';
 
