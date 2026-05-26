@@ -155,28 +155,68 @@ class DashboardController extends Controller
 
     public function sendProxy(Request $request)
     {
-        // Validasi input dasar
+        // 1. Validasi input dinamis
         $request->validate([
             'domain'  => 'required|url',
             'token'   => 'required|string',
             'phone'   => 'required|string',
-            'message' => 'required|string',
+            'action'  => 'nullable|string|in:check,send',
+            // Message hanya diwajibkan jika action-nya adalah mengirim pesan
+            'message' => 'required_if:action,send|string', 
         ]);
 
         $domain = rtrim($request->input('domain'), '/');
-        $url = $domain . '/api/send-message';
+        $token  = $request->input('token');
+        $phone  = $request->input('phone');
+        $action = $request->input('action', 'send'); // Default fallback ke 'send'
 
-        // Tembak API Wablas menggunakan Laravel HTTP Client
-        $response = Http::withHeaders([
-            'Authorization' => $request->input('token'),
-            'Accept'        => 'application/json',
-        ])->post($url, [
-            'phone'   => $request->input('phone'),
-            'message' => $request->input('message'),
-        ]);
+        // 2. LOGIKA CEK NOMOR AKTIF (Sesuai Dokumentasi GET Wablas)
+        if ($action === 'check') {
+            $url = 'https://bdg.wablas.com/check-phone-number';
 
-        // Kembalikan respons dari Wablas ke frontend GitHub Pages
-        return response()->json($response->json(), $response->status());
+            // Menggunakan withoutVerifying() sebagai padanan CURLOPT_SSL_VERIFYPEER => 0
+            $response = Http::withoutVerifying()->withHeaders([
+                'Authorization' => $token,
+                'url'           => $domain, // Wajib disisipkan di header sesuai aturan Wablas
+                'Accept'        => 'application/json',
+            ])->get($url, [
+                'phones' => $phone
+            ]);
+
+            $resData = $response->json();
+            $isValid = false;
+
+            // Menerjemahkan format array Wablas ke boolean untuk Frontend
+            if (isset($resData['data']) && is_array($resData['data'])) {
+                foreach ($resData['data'] as $item) {
+                    if (isset($item['status']) && strtolower($item['status']) === 'valid') {
+                        $isValid = true;
+                        break;
+                    }
+                }
+            }
+
+            return response()->json([
+                'status'     => $isValid,
+                'message'    => $isValid ? 'Valid' : 'Invalid',
+                'raw_wablas' => $resData
+            ], 200);
+        } 
+
+        // 3. LOGIKA KIRIM PESAN (Sesuai Dokumentasi POST Wablas)
+        else {
+            $url = $domain . '/api/send-message';
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'Authorization' => $token,
+                'Accept'        => 'application/json',
+            ])->post($url, [
+                'phone'   => $phone,
+                'message' => $request->input('message'),
+            ]);
+
+            return response()->json($response->json(), $response->status());
+        }
     }
 
     public function indexVerifikasi()
