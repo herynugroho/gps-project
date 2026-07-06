@@ -169,7 +169,6 @@
         <div class="row mt-3 text-start small">
             <div class="col-6"><strong>Kendaraan:</strong> <span id="print-txt-device">-</span></div>
             <div class="col-6 text-end"><strong>Tanggal Rekap:</strong> <span id="print-txt-date">-</span></div>
-            <div class="col-12 mt-1"><strong>Nama Driver:</strong> <span id="print-txt-driver">-</span></div>
         </div>
     </div>
 
@@ -191,7 +190,7 @@
     <div class="card border-0 shadow-sm mb-4 no-print">
         <div class="card-body p-4">
             <form id="filterForm" class="row g-3 align-items-end">
-                <div class="col-md-4">
+                <div class="col-md-5">
                     <label class="form-label small fw-bold text-uppercase text-muted">Pilih Kendaraan / Perangkat</label>
                     <select id="device_id" class="form-select" required>
                         <option value="">-- Silakan Tentukan Armada --</option>
@@ -200,16 +199,12 @@
                         @endforeach
                     </select>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-5">
                     <label class="form-label small fw-bold text-uppercase text-muted">Tanggal Audit</label>
                     <input type="date" id="date" class="form-select" value="{{ date('Y-m-d') }}" required>
                 </div>
-                <div class="col-md-4" id="driver_container" style="display: none;">
-                    <label class="form-label small fw-bold text-uppercase text-primary"><i class="fa-solid fa-user-tie"></i> Nama Driver Hari Ini</label>
-                    <input type="text" id="nama_driver" class="form-control fw-bold border-primary" placeholder="Masukkan nama pengemudi...">
-                </div>
-                <div class="col-12 d-flex justify-content-end mt-3">
-                    <button type="submit" class="btn btn-action btn-dark py-2 px-4 d-flex align-items-center gap-2">
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-action btn-dark w-100 py-2.5 d-flex align-items-center justify-content-center gap-2">
                         <i class="fa-solid fa-magnifying-glass"></i> Muat Rekap
                     </button>
                 </div>
@@ -227,8 +222,8 @@
                             <th width="18%">Mulai Parkir (WITA)</th>
                             <th width="12%">Durasi Singgah</th>
                             <th width="24%">Koordinat GPS Asli</th>
-                            <th width="22%">Lat Long Pengerjaan Riil</th>
-                            <th width="24%">Keterangan Lapangan</th>
+                            <th width="18%">Lat Long Pengerjaan Riil (Kolom Tambahan)</th>
+                            <th width="20%">Keterangan Lapangan (Kolom Tambahan)</th>
                             <th width="4%" class="text-center no-print">Aksi</th>
                         </tr>
                     </thead>
@@ -275,26 +270,11 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-var modalMap = null;
+var modalMap = null; // Handler instance peta modal compare
 
 $(document).ready(function() {
     $.ajaxSetup({
         headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') }
-    });
-
-    // PERBAIKAN: Trigger muncul/sembunyi kolom Driver saat pilih kendaraan
-    $('#device_id').on('change', function() {
-        if ($(this).val() !== '') {
-            $('#driver_container').fadeIn();
-        } else {
-            $('#driver_container').fadeOut();
-            $('#nama_driver').val('');
-        }
-    });
-
-    // Sinkronisasi Ketikan Driver ke Kop Cetak Print Document
-    $('#nama_driver').on('input', function() {
-        $('#print-txt-driver').text($(this).val() || '-');
     });
 
     // Proses AJAX Load Data Rekap Parkir
@@ -306,7 +286,6 @@ $(document).ready(function() {
 
         $('#print-txt-device').text(deviceText);
         $('#print-txt-date').text(date);
-        $('#print-txt-driver').text($('#nama_driver').val() || '-');
 
         $('#tableBody').html('<tr><td colspan="7" class="text-center py-5"><div class="spinner-border text-secondary spinner-border-sm mb-2 d-block mx-auto"></div> Menghitung titik singgah armada...</td></tr>');
         $('#actionButtons').attr('style', 'display: none !important;');
@@ -324,19 +303,6 @@ $(document).ready(function() {
                 } else {
                     $('#actionButtons').removeAttr('style');
 
-                    // PERBAIKAN: Deteksi jika sudah ada nama driver tersimpan sebelumnya di DB pada hari itu, set ke input atas
-                    let savedDriverName = '';
-                    for (let i = 0; i < data.length; i++) {
-                        if (data[i].nama_driver) {
-                            savedDriverName = data[i].nama_driver;
-                            break;
-                        }
-                    }
-                    if (savedDriverName) {
-                        $('#nama_driver').val(savedDriverName);
-                        $('#print-txt-driver').text(savedDriverName);
-                    }
-
                     data.forEach((item, index) => {
                         let statusBtn = item.is_verified ? 'btn-primary' : 'btn-outline-primary';
                         let labelBtn = item.is_verified ? '<i class="fa-solid fa-arrows-rotate"></i> Update' : '<i class="fa-solid fa-floppy-disk"></i> Simpan';
@@ -350,10 +316,10 @@ $(document).ready(function() {
                                     <div class="d-flex align-items-center justify-content-between">
                                         <small class="text-muted text-monospace">${item.koordinat_gps}</small>
                                         <div class="d-flex gap-1 no-print">
-                                            <a href="https://maps.google.com/?q=${item.koordinat_gps}" target="_blank" class="btn btn-light border py-1 px-2 btn-sm" style="font-size: 11px;">
+                                            <a href="https://maps.google.com/?q=${item.koordinat_gps}" target="_blank" class="btn btn-light border py-1 px-2 btn-sm" title="Buka di Google Maps" style="font-size: 11px;">
                                                 <i class="fa-solid fa-map-location-dot text-danger"></i> Map
                                             </a>
-                                            <button type="button" class="btn btn-light border py-1 px-2 btn-sm btn-compare" data-gps="${item.koordinat_gps}" style="font-size: 11px;">
+                                            <button type="button" class="btn btn-light border py-1 px-2 btn-sm btn-compare" data-gps="${item.koordinat_gps}" title="Bandingkan dengan Lokasi Riil" style="font-size: 11px;">
                                                 <i class="fa-solid fa-code-compare text-primary"></i> Compare
                                             </button>
                                         </div>
@@ -381,13 +347,17 @@ $(document).ready(function() {
         });
     });
 
+    // ==========================================
+    // LOGIKA EVENT KLIK TOMBOL COMPARE (AJAX FRONTEND)
+    // ==========================================
     $(document).on('click', '.btn-compare', function() {
         let $row = $(this).closest('tr');
         let gpsRaw = $(this).data('gps');
         let realRaw = $row.find('.input-latlong').val();
 
+        // Validasi inputan kolom Lat Long tambahan
         if (!realRaw || !realRaw.includes(',')) {
-            alert('Silakan masukkan koordinat Lat Long Pengerjaan Riil di kolom sebelahnya terlebih dahulu!');
+            alert('Silakan masukkan koordinat Lat Long Pengerjaan Riil (format: latitude,longitude) di kolom sebelahnya terlebih dahulu untuk membandingkan!');
             return;
         }
 
@@ -400,15 +370,20 @@ $(document).ready(function() {
         let realLng = parseFloat(realArr[1].trim());
 
         if (isNaN(gpsLat) || isNaN(gpsLng) || isNaN(realLat) || isNaN(realLng)) {
-            alert('Format penulisan koordinat salah!');
+            alert('Format penulisan koordinat salah! Pastikan menggunakan format angka desimal dipisahkan koma (cth: -5.148, 119.432)');
             return;
         }
 
+        // Tampilkan Modal Bootstrap
         let myModal = new bootstrap.Modal(document.getElementById('compareModal'));
         myModal.show();
 
+        // Render Peta Leaflet di dalam Modal pasca-animasi transisi modal terbuka selesai
         setTimeout(() => {
-            if (modalMap !== null) { modalMap.remove(); }
+            // Hapus instansi peta modal lama jika sudah pernah terbuka sebelumnya (mencegah memory leak)
+            if (modalMap !== null) {
+                modalMap.remove();
+            }
 
             modalMap = L.map('modalMapContainer', { zoomControl: true }).setView([gpsLat, gpsLng], 16);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(modalMap);
@@ -416,6 +391,7 @@ $(document).ready(function() {
             let p1 = L.latLng(gpsLat, gpsLng);
             let p2 = L.latLng(realLat, realLng);
 
+            // Hitung Jarak Deviasi antar 2 Koordinat (Meter)
             let distanceMeters = p1.distanceTo(p2);
             let textJarak = distanceMeters > 1000 
                 ? (distanceMeters / 1000).toFixed(2) + ' km' 
@@ -423,31 +399,33 @@ $(document).ready(function() {
 
             $('#modalDistanceText').html(`Selisih Jarak Penyimpangan (Deviasi): <strong class="text-danger fs-5 ms-1">${textJarak}</strong>`);
 
+            // Desain Marker Pin Custom Premium (Sinkron seperti halaman history)
             const blueIcon = L.divIcon({
-                className: 'custom-pin-gps',
-                html: `<div style="background-color: #3b82f6; color: white; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 11px; border: 2px solid white; box-shadow: 0 2px 8px rgba(59,130,246,0.4);"><i class="fa-solid fa-satellite-dish"></i></div>`,
-                iconSize: [32, 32], iconAnchor: [16, 16]
+                className: 'custom-pin',
+                html: `<div style="background-color: #3b82f6; color: white; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 10px; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);"><i class="fa-solid fa-satellite-dish"></i></div>`,
+                iconSize: [26, 26], iconAnchor: [13, 13]
             });
 
             const redIcon = L.divIcon({
-                className: 'custom-pin-field',
-                html: `<div style="background-color: #ef4444; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 9px; border: 2px solid white; box-shadow: 0 2px 6px rgba(239,68,68,0.4);"><i class="fa-solid fa-person-digging"></i></div>`,
-                iconSize: [24, 24], iconAnchor: [12, 12]
+                className: 'custom-pin',
+                html: `<div style="background-color: #ef4444; color: white; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 10px; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);"><i class="fa-solid fa-person-digging"></i></div>`,
+                iconSize: [26, 26], iconAnchor: [13, 13]
             });
 
-            L.marker(p1, { icon: blueIcon, zIndexOffset: 10 }).addTo(modalMap).bindPopup('<b>Posisi GPS Asli</b><br>'+gpsRaw);
-            L.marker(p2, { icon: redIcon, zIndexOffset: 20 }).addTo(modalMap).bindPopup('<b>Lokasi Kerja Lapangan</b><br>'+realRaw);
+            // Tanam Marker ke Peta
+            L.marker(p1, { icon: blueIcon }).addTo(modalMap).bindPopup('<b>Posisi GPS Asli</b><br>'+gpsRaw);
+            L.marker(p2, { icon: redIcon }).addTo(modalMap).bindPopup('<b>Lokasi Kerja Lapangan</b><br>'+realRaw);
 
-            if (Math.round(distanceMeters) > 0) {
-                L.polyline([p1, p2], { color: '#ef4444', weight: 3, dashArray: '6, 9', opacity: 0.85 }).addTo(modalMap);
-            }
+            // Gambar Garis Putus-Putus Merah Penghubung Deviasi Jarak
+            L.polyline([p1, p2], { color: '#ef4444', weight: 3, dashArray: '6, 9', opacity: 0.85 }).addTo(modalMap);
 
+            // Zoom otomatis agar kedua titik pas terlihat seimbang di layar peta
             modalMap.fitBounds(L.featureGroup([L.marker(p1), L.marker(p2)]).getBounds(), { padding: [50, 50] });
             modalMap.invalidateSize();
         }, 300);
     });
 
-    // Proses Simpan / Update
+    // Proses AJAX Simpan atau Update Verifikasi per Baris Data
     $(document).on('click', '.btn-simpan', function() {
         let $btn = $(this);
         let $row = $btn.closest('tr');
@@ -457,9 +435,6 @@ $(document).ready(function() {
         let koordinatGps = $btn.data('gps');
         let latLongPengerjaan = $row.find('.input-latlong').val();
         let keterangan = $row.find('.input-keterangan').val();
-        
-        // PERBAIKAN: Mengambil data nama_driver dari input tunggal di bagian ATAS form filter
-        let namaDriver = $('#nama_driver').val(); 
 
         $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
@@ -471,8 +446,7 @@ $(document).ready(function() {
                 waktu_mulai: waktuMulai,
                 koordinat_gps: koordinatGps,
                 lat_long_pengerjaan: latLongPengerjaan,
-                keterangan: keterangan,
-                nama_driver: namaDriver // Otomatis terkirim ke Database
+                keterangan: keterangan
             },
             success: function(response) {
                 if(response.status === 'success') {
@@ -489,7 +463,12 @@ $(document).ready(function() {
         });
     });
 
-    $('#btnPrint').on('click', function() { window.print(); });
+    // Event Handler Cetak
+    $('#btnPrint').on('click', function() {
+        window.print();
+    });
+
+    // Event Handler Ekspor File Excel
     $('#btnExport').on('click', function() {
         let deviceId = $('#device_id').val();
         let date = $('#date').val();

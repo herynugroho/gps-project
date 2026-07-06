@@ -291,6 +291,7 @@ class DashboardController extends Controller
                 'koordinat_gps' => $point->koordinat,
                 'lat_long_pengerjaan' => $match ? $match->lat_long_pengerjaan : '',
                 'keterangan' => $match ? $match->keterangan : '',
+                'nama_driver' => $match ? $match->nama_driver : '',
                 'is_verified' => $match ? true : false
             ];
         });
@@ -316,6 +317,7 @@ class DashboardController extends Controller
                 'koordinat_gps' => $request->koordinat_gps,
                 'lat_long_pengerjaan' => $request->lat_long_pengerjaan,
                 'keterangan' => $request->keterangan,
+                'nama_driver' => $request->nama_driver,
                 'updated_at' => now() // Mengikuti WITA server
             ]
         );
