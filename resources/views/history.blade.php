@@ -73,22 +73,35 @@
 
         <div id="map-container" class="absolute inset-0 lg:relative lg:flex-1 z-0">
             <div id="map" class="w-full h-full"></div>
+
+            <!-- FLOATING MAP CONTROLS -->
+            <div class="absolute right-3 top-24 lg:bottom-8 lg:top-auto z-[500] flex flex-col gap-2">
+                <button onclick="map.zoomIn()" title="Perbesar" class="w-10 h-10 md:w-11 md:h-11 bg-white/95 backdrop-blur-md text-slate-800 rounded-xl shadow-lg border border-slate-200/60 flex items-center justify-center font-bold active:scale-95 transition hover:bg-slate-50">
+                    <i class="fa-solid fa-plus text-xs md:text-sm"></i>
+                </button>
+                <button onclick="map.zoomOut()" title="Perkecil" class="w-10 h-10 md:w-11 md:h-11 bg-white/95 backdrop-blur-md text-slate-800 rounded-xl shadow-lg border border-slate-200/60 flex items-center justify-center font-bold active:scale-95 transition hover:bg-slate-50">
+                    <i class="fa-solid fa-minus text-xs md:text-sm"></i>
+                </button>
+                <button onclick="fitRoute()" title="Fokus Keseluruhan Rute" class="w-10 h-10 md:w-11 md:h-11 bg-white/95 backdrop-blur-md text-blue-600 rounded-xl shadow-lg border border-slate-200/60 flex items-center justify-center font-bold active:scale-95 transition hover:bg-slate-50">
+                    <i class="fa-solid fa-expand text-xs md:text-sm"></i>
+                </button>
+            </div>
         </div>
         
         <aside class="flex flex-col w-full lg:w-[480px] z-20 shrink-0 lg:h-full lg:shadow-2xl pointer-events-none lg:pointer-events-auto bg-transparent lg:bg-white order-1 side-panel">
             
             <div class="p-4 lg:p-6 bg-slate-900 text-white shrink-0 pointer-events-auto shadow-lg lg:shadow-none z-30 no-print">
                 <div class="flex items-center justify-between mb-2 lg:mb-6">
-                    <div class="flex items-center gap-4">
-                        <a href="/" class="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 border border-slate-700 hover:bg-slate-700 transition">
-                            <i class="fa-solid fa-chevron-left text-sm"></i>
+                    <div class="flex items-center gap-3">
+                        <a href="/" class="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-xl bg-slate-800 border border-slate-700 hover:bg-slate-700 transition active:scale-95">
+                            <i class="fa-solid fa-chevron-left text-xs md:text-sm"></i>
                         </a>
                         <div>
-                            <h1 class="font-black text-sm uppercase leading-none tracking-tight">{{ $device->name }}</h1>
-                            <p class="text-[10px] text-blue-400 font-bold mt-1 uppercase tracking-widest">{{ $device->plate_number }}</p>
+                            <h1 class="font-black text-xs md:text-sm uppercase leading-none tracking-tight">{{ $device->name }}</h1>
+                            <p class="text-[9px] md:text-[10px] text-blue-400 font-bold mt-1 uppercase tracking-widest font-mono">{{ $device->plate_number }}</p>
                         </div>
                     </div>
-                    <button onclick="window.print()" class="text-[9px] font-black uppercase bg-slate-800 px-3 py-2 rounded-lg border border-slate-700">
+                    <button onclick="window.print()" class="text-[9px] font-black uppercase bg-slate-800 px-3 py-2 rounded-lg border border-slate-700 hover:bg-slate-700 transition active:scale-95">
                         <i class="fa-solid fa-print mr-1"></i> Cetak
                     </button>
                 </div>
@@ -112,16 +125,22 @@
                     </button>
                 </div>
                 
-                <button onclick="document.getElementById('filter-box').classList.toggle('hidden')" class="lg:hidden w-full mt-2 text-[10px] text-slate-400 font-bold uppercase flex justify-center items-center gap-2 border border-slate-700 py-1.5 rounded-lg">
-                    <i class="fa-solid fa-filter"></i> Filter Waktu
+                <button onclick="document.getElementById('filter-box').classList.toggle('hidden')" class="lg:hidden w-full mt-2 text-[10px] text-slate-300 bg-slate-800 hover:bg-slate-700 font-bold uppercase flex justify-center items-center gap-2 border border-slate-700 py-2 rounded-xl transition active:scale-95">
+                    <i class="fa-solid fa-filter text-blue-400"></i> Ubah Periode Tanggal
                 </button>
             </div>
 
             <div class="flex-1 lg:hidden no-print"></div>
 
-            <div class="bg-white pointer-events-auto rounded-t-3xl lg:rounded-none shadow-[0_-15px_30px_rgba(0,0,0,0.15)] lg:shadow-none flex flex-col z-30 transition-all duration-300 h-[45vh] lg:h-full lg:flex-1 lg:min-h-0" id="bottom-sheet">
+            <div class="bg-white pointer-events-auto rounded-t-3xl lg:rounded-none shadow-[0_-15px_30px_rgba(0,0,0,0.15)] lg:shadow-none flex flex-col z-30 transition-all duration-300 h-[135px] lg:h-full lg:flex-1 lg:min-h-0" id="bottom-sheet">
                 
-                <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-2 lg:hidden cursor-pointer no-print" onclick="toggleSheet()"></div>
+                <div class="w-full flex flex-col items-center pt-2.5 pb-1 lg:hidden cursor-pointer no-print select-none active:opacity-75" onclick="toggleSheet()">
+                    <div class="w-12 h-1.5 bg-slate-200 hover:bg-slate-300 rounded-full mb-1 transition"></div>
+                    <div class="text-[9px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                        <span id="sheet-toggle-text">Lihat Detail Singgah</span>
+                        <i id="sheet-toggle-icon" class="fa-solid fa-chevron-up text-[8px] transition-transform"></i>
+                    </div>
+                </div>
 
                 <div class="px-4 pb-3 pt-1 lg:p-5 border-b border-slate-100 shrink-0">
                     <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 lg:gap-3">
@@ -180,7 +199,8 @@
         var pathLines = [];
         var markers = [];
         var parkingMarkers = [];
-        var isSheetCollapsed = false;
+        var isSheetCollapsed = true;
+        var points = [];
 
         function toggleInputs() {
             const mode = document.getElementById('mode-selector').value;
@@ -190,11 +210,24 @@
 
         function toggleSheet() {
             const sheet = document.getElementById('bottom-sheet');
+            const toggleText = document.getElementById('sheet-toggle-text');
+            const toggleIcon = document.getElementById('sheet-toggle-icon');
+            
             isSheetCollapsed = !isSheetCollapsed;
-            if(isSheetCollapsed) {
-                sheet.style.maxHeight = "12vh"; 
+            if (isSheetCollapsed) {
+                sheet.style.height = "135px";
+                if (toggleText) toggleText.innerText = "Lihat Detail Singgah";
+                if (toggleIcon) toggleIcon.classList.remove('rotate-180');
             } else {
-                sheet.style.maxHeight = "45vh"; 
+                sheet.style.height = "65vh";
+                if (toggleText) toggleText.innerText = "Tutup Detail";
+                if (toggleIcon) toggleIcon.classList.add('rotate-180');
+            }
+        }
+
+        function fitRoute() {
+            if (points && points.length > 0) {
+                map.fitBounds(L.polyline(points).getBounds(), { padding: [50, 50] });
             }
         }
 
@@ -262,7 +295,7 @@
                 // PERBAIKAN: Palette Warna Rute Unik untuk Membedakan Jalur Antar Titik Singgah
                 const routeColors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6'];
                 
-                let points = [];
+                points = [];
                 let pEvents = [];
                 let lastP = null;
                 let totalD = 0; 

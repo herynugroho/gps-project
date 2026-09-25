@@ -2,15 +2,22 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>SECURED CONFIG - PRIMA TRACK</title>
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap" rel="stylesheet">
-    <style>body { font-family: 'Inter', sans-serif; }</style>
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif;
+            padding-bottom: max(2rem, env(safe-area-inset-bottom));
+            padding-top: max(1rem, env(safe-area-inset-top));
+            -webkit-tap-highlight-color: transparent;
+        }
+    </style>
 </head>
-<body class="bg-slate-900 min-h-screen p-6">
+<body class="bg-slate-900 min-h-screen p-4 sm:p-6">
 
     <div class="max-w-3xl mx-auto">
         <!-- Header -->

@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Verifikasi Titik Parkir - Prima Track</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -14,12 +14,15 @@
             background-color: #f8fafc;
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
             color: #334155;
+            padding-bottom: env(safe-area-inset-bottom, 1rem);
+            -webkit-tap-highlight-color: transparent;
         }
         
         /* BAR NAVBAR UTAMA */
         .enterprise-header {
             background-color: #0b1329; /* Navy premium sesuai dashboard */
             border-bottom: 1px solid #1e293b;
+            padding-top: max(0.5rem, env(safe-area-inset-top));
         }
         .btn-back-home {
             background-color: #1e293b;
@@ -162,7 +165,7 @@
     </div>
 </header>
 
-<div class="container-fluid px-4 pb-5">
+<div class="container-fluid px-3 px-md-4 pb-5">
     <div class="print-header-doc text-center">
         <h4 class="mb-1 fw-bold">PRIMA TRACK - MONITORING SYSTEM</h4>
         <p class="mb-0 text-muted small">Laporan Verifikasi Dan Audit Kesesuaian Titik Parkir Lapangan</p>
@@ -173,25 +176,25 @@
         </div>
     </div>
 
-    <div class="d-flex justify-content-between align-items-center mb-4 no-print">
+    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-3 mb-4 no-print">
         <div>
-            <h4 class="fw-bold mb-1 text-dark">Verifikasi Lokasi Parkir Lapangan</h4>
+            <h4 class="fw-bold mb-1 text-dark fs-5 fs-md-4">Verifikasi Lokasi Parkir Lapangan</h4>
             <p class="text-muted small mb-0">Validasi kesesuaian titik koordinat singgah GPS dengan data lokasi pengerjaan riil.</p>
         </div>
-        <div class="btn-action-group d-flex gap-2" id="actionButtons" style="display: none !important;">
-            <button type="button" id="btnPrint" class="btn btn-action btn-outline-secondary d-flex align-items-center gap-2">
+        <div class="btn-action-group d-flex flex-wrap gap-2 w-100 w-sm-auto" id="actionButtons" style="display: none !important;">
+            <button type="button" id="btnPrint" class="btn btn-action btn-outline-secondary d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0">
                 <i class="fa-solid fa-print"></i> Cetak Dokumen
             </button>
-            <button type="button" id="btnExport" class="btn btn-action btn-success d-flex align-items-center gap-2">
+            <button type="button" id="btnExport" class="btn btn-action btn-success d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0">
                 <i class="fa-solid fa-file-excel"></i> Export Ke Excel
             </button>
         </div>
     </div>
 
     <div class="card border-0 shadow-sm mb-4 no-print">
-        <div class="card-body p-4">
+        <div class="card-body p-3 p-md-4">
             <form id="filterForm" class="row g-3 align-items-end">
-                <div class="col-md-4">
+                <div class="col-12 col-md-4">
                     <label class="form-label small fw-bold text-uppercase text-muted">Pilih Kendaraan / Perangkat</label>
                     <select id="device_id" class="form-select" required>
                         <option value="">-- Silakan Tentukan Armada --</option>
@@ -200,16 +203,16 @@
                         @endforeach
                     </select>
                 </div>
-                <div class="col-md-4">
+                <div class="col-12 col-md-4">
                     <label class="form-label small fw-bold text-uppercase text-muted">Tanggal Audit</label>
                     <input type="date" id="date" class="form-select" value="{{ date('Y-m-d') }}" required>
                 </div>
-                <div class="col-md-4" id="driver_container" style="display: none;">
+                <div class="col-12 col-md-4" id="driver_container" style="display: none;">
                     <label class="form-label small fw-bold text-uppercase text-primary"><i class="fa-solid fa-user-tie"></i> Nama Driver Hari Ini</label>
                     <input type="text" id="nama_driver" class="form-control fw-bold border-primary" placeholder="Masukkan nama pengemudi...">
                 </div>
-                <div class="col-12 d-flex justify-content-end mt-3">
-                    <button type="submit" class="btn btn-action btn-dark py-2 px-4 d-flex align-items-center gap-2">
+                <div class="col-12 d-flex justify-content-end mt-2 mt-md-3">
+                    <button type="submit" class="btn btn-action btn-dark py-2.5 px-4 w-100 w-sm-auto d-flex align-items-center justify-content-center gap-2">
                         <i class="fa-solid fa-magnifying-glass"></i> Muat Rekap
                     </button>
                 </div>
@@ -218,9 +221,12 @@
     </div>
 
     <div class="card border-0 shadow-sm overflow-hidden">
+        <div class="d-block d-md-none bg-slate-100 px-3 py-2 border-bottom text-muted small" style="font-size: 11px;">
+            <i class="fa-solid fa-arrows-left-right text-primary me-1"></i> Geser tabel ke samping untuk melihat koordinat riil & tombol aksi
+        </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover mb-0 align-middle">
+                <table class="table table-hover mb-0 align-middle" style="min-width: 820px;">
                     <thead>
                         <tr>
                             <th width="4%" class="text-center py-3">No</th>
@@ -257,7 +263,7 @@
                 <div class="bg-light p-3 text-center border-bottom">
                     <span id="modalDistanceText" class="fs-6 fw-bold text-dark">Menghitung deviasi...</span>
                 </div>
-                <div id="modalMapContainer" style="width: 100%; height: 380px; background-color: #f1f5f9;"></div>
+                <div id="modalMapContainer" style="width: 100%; height: clamp(280px, 45vh, 400px); background-color: #f1f5f9;"></div>
             </div>
             <div class="modal-footer bg-light p-2 d-flex justify-content-between px-3">
                 <div class="small text-muted" style="font-size: 11px;">
@@ -347,26 +353,27 @@ $(document).ready(function() {
                                 <td><span class="text-monospace text-secondary">${item.waktu_mulai}</span></td>
                                 <td><span class="badge badge-parking px-2.5 py-1.5">${item.durasi}</span></td>
                                 <td>
-                                    <div class="d-flex align-items-center justify-content-between">
+                                    <div class="d-flex align-items-center justify-content-between gap-2">
                                         <small class="text-muted text-monospace">${item.koordinat_gps}</small>
                                         <div class="d-flex gap-1 no-print">
-                                            <a href="https://maps.google.com/?q=${item.koordinat_gps}" target="_blank" class="btn btn-light border py-1 px-2 btn-sm" style="font-size: 11px;">
+                                            <a href="https://maps.google.com/?q=${item.koordinat_gps}" target="_blank" class="btn btn-light border py-1.5 px-2.5 btn-sm d-inline-flex align-items-center gap-1" style="font-size: 11px; min-height: 32px;">
                                                 <i class="fa-solid fa-map-location-dot text-danger"></i> Map
                                             </a>
-                                            <button type="button" class="btn btn-light border py-1 px-2 btn-sm btn-compare" data-gps="${item.koordinat_gps}" style="font-size: 11px;">
+                                            <button type="button" class="btn btn-light border py-1.5 px-2.5 btn-sm btn-compare d-inline-flex align-items-center gap-1" data-gps="${item.koordinat_gps}" style="font-size: 11px; min-height: 32px;">
                                                 <i class="fa-solid fa-code-compare text-primary"></i> Compare
                                             </button>
                                         </div>
                                     </div>
                                 </td>
                                 <td>
-                                    <input type="text" class="form-control form-control-sm input-latlong text-monospace" value="${item.lat_long_pengerjaan || ''}" placeholder="-5.xxxx, 119.xxxx">
+                                    <input type="text" class="form-control form-control-sm input-latlong text-monospace" style="min-width: 140px;" value="${item.lat_long_pengerjaan || ''}" placeholder="-5.xxxx, 119.xxxx">
                                 </td>
                                 <td>
-                                    <textarea class="form-control form-control-sm input-keterangan" rows="1" placeholder="cth: Galian pipa simpang tiga">${item.keterangan || ''}</textarea>
+                                    <textarea class="form-control form-control-sm input-keterangan" style="min-width: 160px;" rows="1" placeholder="cth: Galian pipa simpang tiga">${item.keterangan || ''}</textarea>
                                 </td>
                                 <td class="text-center no-print">
-                                    <button type="button" class="btn btn-sm ${statusBtn} btn-simpan px-3" 
+                                    <button type="button" class="btn btn-sm ${statusBtn} btn-simpan px-3 py-1.5 d-inline-flex align-items-center justify-content-center gap-1" 
+                                            style="min-height: 34px; font-weight: 600;"
                                             data-waktu="${item.waktu_mulai}" 
                                             data-gps="${item.koordinat_gps}">
                                         ${labelBtn}
