@@ -6,156 +6,197 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use App\Models\Device;
+use App\Models\Position;
+use App\Models\VerifikasiParkir;
+use App\Models\CommandLog;
 
 class DashboardController extends Controller
 {
-    public function index() {
+    const TZ = 'Asia/Makassar';
+
+    public function index()
+    {
         return view('dashboard');
     }
 
-    public function super_admin() {
+    public function super_admin()
+    {
         return view('command_center');
     }
 
-    // public function getApiData() {
-    //     // Mengambil data device beserta status ACC terbaru
-    //     $devices = DB::table('devices')
-    //         ->select('devices.*', 'positions.latitude', 'positions.longitude', 'positions.speed', 'positions.gps_time')
-    //         ->leftJoin('positions', function ($join) {
-    //             $join->on('devices.imei', '=', 'positions.imei')
-    //                  ->whereRaw('positions.id IN (select MAX(id) from positions group by imei)');
-    //         })->get();
-    //     return response()->json($devices);
-    // }
+    /**
+     * API Telemetri Armada Real-Time.
+     * Menggunakan kolom denormalisasi pada tabel devices untuk performa O(1) per armada
+     * tanpa pemindaian jutaan baris log pada tabel positions.
+     */
+    public function getApiData()
+    {
+        $devices = Device::all();
 
-    public function getApiData() {
-        // 1. Kumpulkan dulu ID posisi terakhir dari masing-masing IMEI (Sangat Ringan)
-        $latestPositions = DB::table('positions')
-            ->select('imei', DB::raw('MAX(id) as max_id'))
-            ->groupBy('imei');
+        $result = $devices->map(function ($device) {
+            $lastGpsTime = $device->last_gps_time 
+                ? $device->last_gps_time->toDateTimeString() 
+                : ($device->last_online ? $device->last_online->toDateTimeString() : null);
 
-        // 2. Lakukan Join Subquery ke tabel devices, lalu tarik koordinatnya
-        $devices = DB::table('devices')
-            ->select(
-                'devices.*', 
-                'positions.latitude', 
-                'positions.longitude', 
-                'positions.speed', 
-                'positions.gps_time'
-            )
-            // Join ke subquery yang kita buat di atas
-            ->leftJoinSub($latestPositions, 'latest', function ($join) {
-                $join->on('devices.imei', '=', 'latest.imei');
-            })
-            // Terakhir, ambil detail lat/long berdasarkan ID terakhir (max_id)
-            ->leftJoin('positions', 'latest.max_id', '=', 'positions.id')
-            ->get();
+            return [
+                'id'           => $device->id,
+                'imei'         => $device->imei,
+                'factory_id'   => $device->factory_id,
+                'name'         => $device->name,
+                'plate_number' => $device->plate_number,
+                'module_type'  => $device->module_type ?? 'GT06N',
+                'fuel_ratio'   => $device->fuel_ratio ?? 10.00,
+                'acc_status'   => $device->acc_status ? 1 : 0,
+                'fuel_status'  => $device->fuel_status ? 1 : 1,
+                'last_online'  => $device->last_online ? $device->last_online->toDateTimeString() : null,
+                'latitude'     => $device->last_latitude,
+                'longitude'    => $device->last_longitude,
+                'speed'        => round($device->last_speed ?? 0),
+                'gps_time'     => $lastGpsTime,
+            ];
+        });
 
-        return response()->json($devices);
+        return response()->json($result);
     }
 
-    public function listDevices() {
-        $devices = DB::table('devices')->orderBy('created_at', 'desc')->paginate(10);
+    public function listDevices()
+    {
+        $devices = Device::orderBy('created_at', 'desc')->paginate(10);
         return view('devices.index', compact('devices'));
     }
 
-    public function create() {
+    public function create()
+    {
         return view('devices.create');
     }
 
-    public function store(Request $request) {
+    public function store(Request $request)
+    {
         $request->validate([
-            'imei' => 'required|numeric|unique:devices,imei',
-            'name' => 'required',
-            'plate_number' => 'required',
-            'module_type' => 'required' // Parameter baru
+            'imei'         => 'required|numeric|unique:devices,imei',
+            'name'         => 'required|string|max:255',
+            'plate_number' => 'required|string|max:50',
+            'module_type'  => 'required|string|in:STANDARD,GT06N',
+            'fuel_ratio'   => 'nullable|numeric|min:1|max:999',
         ]);
 
-        DB::table('devices')->insert([
-            'imei' => $request->imei,
-            'name' => $request->name,
-            'plate_number' => $request->plate_number,
-            'module_type' => $request->module_type,
-            'acc_status' => 0,
-            'fuel_status' => 1,
-            'created_at' => Carbon::now(),
-            'updated_at' => Carbon::now(),
+        Device::create([
+            'imei'         => $request->imei,
+            'name'         => $request->name,
+            'plate_number' => strtoupper(trim($request->plate_number)),
+            'module_type'  => $request->module_type,
+            'fuel_ratio'   => $request->input('fuel_ratio', 10.00),
+            'acc_status'   => 0,
+            'fuel_status'  => 1,
         ]);
 
         return redirect()->route('devices.index')->with('success', 'Perangkat berhasil ditambahkan!');
     }
 
-    public function destroy($id) {
-        DB::table('devices')->where('id', $id)->delete();
+    public function destroy($id)
+    {
+        $device = Device::findOrFail($id);
+        $device->delete();
         return redirect()->route('devices.index')->with('success', 'Perangkat berhasil dihapus.');
     }
 
-    public function history($imei) {
-        $device = DB::table('devices')->where('imei', $imei)->first();
-        if (!$device) abort(404);
+    public function history($imei)
+    {
+        $device = Device::where('imei', $imei)->firstOrFail();
         return view('history', compact('device'));
     }
 
-    public function getHistoryApi(Request $request, $imei) {
-        $query = DB::table('positions')->where('imei', $imei);
-
-        // Pastikan menggunakan zona waktu Makassar agar "Hari Ini" tidak meleset
-        $tz = 'Asia/Makassar'; 
+    public function getHistoryApi(Request $request, $imei)
+    {
+        $query = Position::where('imei', $imei);
 
         // 1. Jika mode "Tanggal Spesifik" (?date=...)
-        if ($request->has('date')) {
+        if ($request->filled('date')) {
             $query->whereDate('gps_time', $request->date);
         } 
         // 2. Jika mode "Rentang Tanggal" (?start=...&end=...)
-        elseif ($request->has('start') && $request->has('end')) {
+        elseif ($request->filled('start') && $request->filled('end')) {
             $query->where('gps_time', '>=', $request->start . ' 00:00:00')
-                ->where('gps_time', '<=', $request->end . ' 23:59:59');
+                  ->where('gps_time', '<=', $request->end . ' 23:59:59');
         } 
-        // 3. Default (Mode Hari Ini)
+        // 3. Default: Hari Ini (WITA)
         else {
-            $query->whereDate('gps_time', \Carbon\Carbon::today($tz));
+            $query->whereDate('gps_time', Carbon::today(self::TZ));
         }
 
         $history = $query->orderBy('gps_time', 'asc')->get();
-        
         return response()->json($history);
     }
 
-     public function sendCommand(Request $request) {
-        $imei = $request->query('imei');
-        $command = $request->query('command');
+    /**
+     * Mengirim Perintah GPRS / Socket Relay ke Perangkat GPS.
+     * Mendukung POST (best practice) dan GET (backward compatibility) dengan whitelist validasi perintah.
+     */
+    public function sendCommand(Request $request)
+    {
+        $imei = $request->input('imei', $request->query('imei'));
+        $command = $request->input('command', $request->query('command'));
 
         if (!$imei || !$command) {
-            return response()->json(['status' => 'error', 'msg' => 'Data tidak lengkap']);
+            return response()->json(['status' => 'error', 'msg' => 'Data tidak lengkap (IMEI dan Command wajib diisi).'], 422);
         }
 
-        // Buka koneksi TCP langsung ke server GPS (Port 5023)
+        $command = trim($command);
+        if (strlen($command) > 100) {
+            return response()->json(['status' => 'error', 'msg' => 'Format perintah terlalu panjang.'], 422);
+        }
+
+        // Whitelist prefix perintah yang diperbolehkan untuk keamanan
+        $allowedPrefixes = [
+            'STATUS', 'VERSION', 'PARAM', 'RESET', 'RELAY', 
+            'TIMER', 'SERVER', 'HBT', 'GPRS', 'WHERE', 'MODE', 'ACCON', 'ACCOFF'
+        ];
+        $isAllowed = false;
+        $upperCmd = strtoupper($command);
+        foreach ($allowedPrefixes as $prefix) {
+            if (str_starts_with($upperCmd, $prefix)) {
+                $isAllowed = true;
+                break;
+            }
+        }
+
+        if (!$isAllowed) {
+            return response()->json([
+                'status' => 'error', 
+                'msg'    => 'Perintah tidak diizinkan oleh sistem.'
+            ], 403);
+        }
+
+        // Buka koneksi TCP langsung ke bridge internal server GPS (Port 5023)
         $fp = @fsockopen("127.0.0.1", 5023, $errno, $errstr, 2);
         
         if (!$fp) {
             return response()->json([
                 'status' => 'error', 
-                'msg' => 'Gagal terhubung ke Bridge GPS: ' . $errstr
-            ]);
+                'msg'    => 'Gagal terhubung ke Bridge GPS Server (Port 5023 offline).'
+            ], 503);
         }
 
         // Kirim data dengan format IMEI|COMMAND
         fwrite($fp, "{$imei}|{$command}");
         
-        // Baca respon (opsional)
+        // Baca respon dari bridge socket
         $response = fgets($fp, 1024);
         fclose($fp);
 
-        return response()->json(json_decode($response) ?: [
+        $decoded = json_decode($response, true);
+        return response()->json($decoded ?: [
             'status' => 'success', 
-            'msg' => 'Perintah telah diteruskan ke socket.'
+            'msg'    => 'Perintah telah diteruskan ke socket.'
         ]);
     }
 
+    /**
+     * Proxy WhatsApp Gateway dengan Proteksi SSRF.
+     */
     public function sendProxy(Request $request)
     {
-        // 1. Validasi Input Dinamis
         $request->validate([
             'domain'  => 'required|url',
             'token'   => 'required|string',
@@ -169,64 +210,83 @@ class DashboardController extends Controller
         $phone  = $request->input('phone');
         $action = $request->input('action', 'send');
 
-        // 2. FASE CEK NOMOR AKTIF
+        // Proteksi SSRF: Pastikan domain tidak mengarah ke IP internal/loopback
+        $host = parse_url($domain, PHP_URL_HOST);
+        if (!$host) {
+            return response()->json(['status' => false, 'message' => 'Domain tidak valid.'], 422);
+        }
+
+        $ip = gethostbyname($host);
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+            return response()->json(['status' => false, 'message' => 'Target domain tidak diizinkan.'], 403);
+        }
+
+        // 1. FASE CEK NOMOR AKTIF
         if ($action === 'check') {
             $url = 'https://phone.wablas.com/check-phone-number';
 
-            $response = Http::withoutVerifying()->withHeaders([
-                'Authorization' => $token,
-                'url'           => $domain,
-                'Accept'        => 'application/json',
-            ])->get($url, [
-                'phones' => $phone
-            ]);
+            try {
+                $response = Http::timeout(10)->withHeaders([
+                    'Authorization' => $token,
+                    'url'           => $domain,
+                    'Accept'        => 'application/json',
+                ])->get($url, [
+                    'phones' => $phone
+                ]);
 
-            $resData = $response->json();
-            $isValid = false;
+                $resData = $response->json();
+                $isValid = false;
 
-            // Menerjemahkan jawaban Wablas berdasarkan DOKUMENTASI TERBARU
-            if (isset($resData['data']) && is_array($resData['data'])) {
-                foreach ($resData['data'] as $item) {
-                    // PERUBAHAN KRUSIAL: Mencari kata 'online' bukan 'valid'
-                    if (isset($item['status']) && strtolower($item['status']) === 'online') {
-                        $isValid = true;
-                        break;
+                if (isset($resData['data']) && is_array($resData['data'])) {
+                    foreach ($resData['data'] as $item) {
+                        if (isset($item['status']) && strtolower($item['status']) === 'online') {
+                            $isValid = true;
+                            break;
+                        }
                     }
+                } else {
+                    $isValid = true;
                 }
-            } else {
-                // SMART BYPASS: Jika Wablas Error (misal 404 / Server Down), 
-                // asumsikan nomor Valid agar antrean pengiriman tidak mandek.
-                $isValid = true;
+
+                return response()->json([
+                    'status'     => $isValid,
+                    'message'    => $isValid ? 'Online / Bypassed' : 'Offline',
+                    'raw_wablas' => $resData
+                ], 200);
+            } catch (\Throwable $e) {
+                return response()->json([
+                    'status'     => true,
+                    'message'    => 'Bypassed due to connection error',
+                    'raw_wablas' => null
+                ], 200);
             }
-
-            return response()->json([
-                'status'     => $isValid,
-                'message'    => $isValid ? 'Online / Bypassed' : 'Offline',
-                'raw_wablas' => $resData
-            ], 200);
         } 
-
-        // 3. FASE KIRIM PESAN UTAMA
+        // 2. FASE KIRIM PESAN UTAMA
         else {
             $url = $domain . '/api/send-message';
 
-            $response = Http::withoutVerifying()->withHeaders([
-                'Authorization' => $token,
-                'Accept'        => 'application/json',
-            ])->post($url, [
-                'phone'   => $phone,
-                'message' => $request->input('message'),
-            ]);
+            try {
+                $response = Http::timeout(15)->withHeaders([
+                    'Authorization' => $token,
+                    'Accept'        => 'application/json',
+                ])->post($url, [
+                    'phone'   => $phone,
+                    'message' => $request->input('message'),
+                ]);
 
-            return response()->json($response->json(), $response->status());
+                return response()->json($response->json(), $response->status());
+            } catch (\Throwable $e) {
+                return response()->json([
+                    'status'  => false, 
+                    'message' => 'Gagal mengirim pesan: ' . $e->getMessage()
+                ], 500);
+            }
         }
     }
 
     public function indexVerifikasi()
     {
-        // PERBAIKAN: Mengambil data dari tabel 'devices' sesuai ERD Bapak
-        $devices = DB::table('devices')->select('id', 'name', 'plate_number')->get(); 
-        
+        $devices = Device::select('id', 'name', 'plate_number')->orderBy('name')->get(); 
         return view('management.verifikasi', compact('devices'));
     }
 
@@ -235,15 +295,12 @@ class DashboardController extends Controller
         $deviceId = $request->device_id;
         $date = $request->date; // Format: YYYY-MM-DD
 
-        // 1. Ambil data imei device terlebih dahulu
-        $device = DB::table('devices')->where('id', $deviceId)->first();
+        $device = Device::find($deviceId);
         if (!$device) {
             return response()->json([]);
         }
 
-        // 2. Ambil semua log posisi gps berdasarkan imei dan tanggal terkait
-        $positions = DB::table('positions')
-            ->where('imei', $device->imei)
+        $positions = Position::where('imei', $device->imei)
             ->whereDate('gps_time', $date)
             ->orderBy('gps_time', 'asc')
             ->get();
@@ -251,48 +308,47 @@ class DashboardController extends Controller
         $parkingPoints = [];
         $lastP = null;
 
-        // 3. SALINAN LOGIKA FRONTEND BAPAK: Menghitung titik parkir (> 5 menit / 300 detik)
         foreach ($positions as $p) {
             if ($lastP) {
                 $t1 = strtotime($p->gps_time);
                 $t2 = strtotime($lastP->gps_time);
-                $timeDiff = $t1 - $t2; // Selisih dalam satuan detik
+                $timeDiff = $t1 - $t2;
 
-                // 300 detik = 5 menit (Sama dengan 300000 ms di JS Bapak)
+                // Mendeteksi jeda singgah/parkir (> 5 menit = 300 detik)
                 if ($timeDiff > 300) {
                     $durasiMenit = floor($timeDiff / 60);
-                    
+                    $waktuMulai = Carbon::parse($lastP->gps_time)->toDateTimeString();
+
                     $parkingPoints[] = (object)[
-                        'waktu_mulai' => $lastP->gps_time,
-                        'durasi' => $durasiMenit . ' mnt',
-                        'koordinat' => $lastP->latitude . ',' . $lastP->longitude
+                        'waktu_mulai' => $waktuMulai,
+                        'durasi'      => $durasiMenit . ' mnt',
+                        'koordinat'   => $lastP->latitude . ',' . $lastP->longitude
                     ];
                 }
             }
             $lastP = $p;
         }
 
-        // 4. Ambil data yang sudah pernah diverifikasi di database
-        // Kolom di ERD Bapak bernama 'vehicle_id', kita isi dengan ID dari tabel devices
-        $verifiedData = DB::table('verifikasi_parkir')
-            ->where('vehicle_id', $deviceId)
+        // Ambil data verifikasi manajemen yang sudah tersimpan
+        $verifiedData = VerifikasiParkir::where('vehicle_id', $deviceId)
             ->whereDate('waktu_mulai', $date)
             ->get()
-            ->keyBy('waktu_mulai');
+            ->keyBy(function($item) {
+                return Carbon::parse($item->waktu_mulai)->toDateTimeString();
+            });
 
-        // 5. Satukan data koordinat parkir dengan data inputan verifikasi manajemen
         $rekapVerifikasi = collect($parkingPoints)->map(function($point) use ($verifiedData) {
             $waktuMulai = $point->waktu_mulai;
             $match = $verifiedData->get($waktuMulai);
 
             return [
-                'waktu_mulai' => $waktuMulai,
-                'durasi' => $point->durasi,
-                'koordinat_gps' => $point->koordinat,
+                'waktu_mulai'         => $waktuMulai,
+                'durasi'              => $point->durasi,
+                'koordinat_gps'       => $point->koordinat,
                 'lat_long_pengerjaan' => $match ? $match->lat_long_pengerjaan : '',
-                'keterangan' => $match ? $match->keterangan : '',
-                'nama_driver' => $match ? $match->nama_driver : '',
-                'is_verified' => $match ? true : false
+                'keterangan'          => $match ? $match->keterangan : '',
+                'nama_driver'         => $match ? $match->nama_driver : '',
+                'is_verified'         => $match ? true : false,
             ];
         });
 
@@ -302,23 +358,24 @@ class DashboardController extends Controller
     public function simpanVerifikasi(Request $request)
     {
         $request->validate([
-            'device_id' => 'required',
-            'waktu_mulai' => 'required',
+            'device_id'     => 'required|exists:devices,id',
+            'waktu_mulai'   => 'required',
             'koordinat_gps' => 'required',
         ]);
 
-        // Simpan ke tabel verifikasi_parkir (vehicle_id diisi id device)
-        DB::table('verifikasi_parkir')->updateOrInsert(
+        $waktuFormatted = Carbon::parse($request->waktu_mulai)->format('Y-m-d H:i:s');
+
+        VerifikasiParkir::updateOrCreate(
             [
-                'vehicle_id' => $request->device_id,
-                'waktu_mulai' => $request->waktu_mulai,
+                'vehicle_id'  => $request->device_id,
+                'waktu_mulai' => $waktuFormatted,
             ],
             [
-                'koordinat_gps' => $request->koordinat_gps,
+                'koordinat_gps'       => $request->koordinat_gps,
                 'lat_long_pengerjaan' => $request->lat_long_pengerjaan,
-                'keterangan' => $request->keterangan,
-                'nama_driver' => $request->nama_driver,
-                'updated_at' => now() // Mengikuti WITA server
+                'keterangan'          => $request->keterangan,
+                'nama_driver'         => $request->nama_driver,
+                'updated_at'          => Carbon::now(self::TZ),
             ]
         );
 
@@ -330,15 +387,12 @@ class DashboardController extends Controller
         $deviceId = $request->device_id;
         $date = $request->date;
 
-        // 1. Ambil data device berdasarkan ID
-        $device = DB::table('devices')->where('id', $deviceId)->first();
+        $device = Device::find($deviceId);
         if (!$device) {
             return redirect()->back()->with('error', 'Device tidak ditemukan.');
         }
 
-        // 2. Ambil log posisi GPS
-        $positions = DB::table('positions')
-            ->where('imei', $device->imei)
+        $positions = Position::where('imei', $device->imei)
             ->whereDate('gps_time', $date)
             ->orderBy('gps_time', 'asc')
             ->get();
@@ -346,43 +400,37 @@ class DashboardController extends Controller
         $parkingPoints = [];
         $lastP = null;
 
-        // 3. Hitung interval titik parkir (> 5 menit)
         foreach ($positions as $p) {
             if ($lastP) {
                 $timeDiff = strtotime($p->gps_time) - strtotime($lastP->gps_time);
                 if ($timeDiff > 300) {
                     $parkingPoints[] = [
-                        'waktu_mulai' => $lastP->gps_time,
-                        'durasi' => floor($timeDiff / 60) . ' mnt',
-                        'koordinat' => $lastP->latitude . ',' . $lastP->longitude
+                        'waktu_mulai' => Carbon::parse($lastP->gps_time)->toDateTimeString(),
+                        'durasi'      => floor($timeDiff / 60) . ' mnt',
+                        'koordinat'   => $lastP->latitude . ',' . $lastP->longitude,
                     ];
                 }
             }
             $lastP = $p;
         }
 
-        // 4. Ambil data hasil verifikasi manajemen jika ada
-        $verifiedData = DB::table('verifikasi_parkir')
-            ->where('vehicle_id', $deviceId)
+        $verifiedData = VerifikasiParkir::where('vehicle_id', $deviceId)
             ->whereDate('waktu_mulai', $date)
             ->get()
-            ->keyBy('waktu_mulai');
+            ->keyBy(function($item) {
+                return Carbon::parse($item->waktu_mulai)->toDateTimeString();
+            });
 
-        // =========================================================
-        // METODE AMAN: Tulis ke Memory Buffer Menggunakan Titik Koma (;)
-        // =========================================================
         $file = fopen('php://temp', 'r+');
         
         // Tambahkan BOM (Byte Order Mark) agar karakter dibaca rapi oleh Microsoft Excel
         fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
 
-        // Judul & Metadata Laporan di Excel (Tambahkan parameter ';' di bagian akhir fputcsv)
         fputcsv($file, ["LAPORAN VERIFIKASI TITIK PARKIR MANAJEMEN"], ';');
         fputcsv($file, ["Kendaraan / Plat", $device->plate_number . " - " . $device->name], ';');
         fputcsv($file, ["Tanggal Rekap", $date], ';');
-        fputcsv($file, [], ';'); // Jeda baris kosong
+        fputcsv($file, [], ';');
 
-        // Judul Kolom Tabel
         fputcsv($file, [
             "No", 
             "Mulai Parkir (WITA)", 
@@ -393,7 +441,6 @@ class DashboardController extends Controller
             "Status Audit"
         ], ';');
 
-        // Mengisi Baris Data
         foreach ($parkingPoints as $index => $point) {
             $match = $verifiedData->get($point['waktu_mulai']);
             fputcsv($file, [
@@ -407,15 +454,12 @@ class DashboardController extends Controller
             ], ';');
         }
 
-        // Baca isi file yang sudah dikumpulkan di memory
         rewind($file);
         $csvContent = stream_get_contents($file);
         fclose($file);
 
-        // Format penamaan file download
         $filename = "Rekap_Verifikasi_Parkir_" . str_replace([' ', '/'], '_', $device->plate_number) . "_" . $date . ".csv";
 
-        // Kirim response utuh ke browser
         return response($csvContent, 200, [
             "Content-type"        => "text/csv; charset=utf-8",
             "Content-Disposition" => "attachment; filename=\"$filename\"",

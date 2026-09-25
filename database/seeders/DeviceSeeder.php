@@ -23,23 +23,36 @@ class DeviceSeeder extends Seeder
         ];
 
         foreach ($fleets as $fleet) {
+            $initialLat = -5.147665 + (rand(-100, 100) / 10000);
+            $initialLng = 119.432731 + (rand(-100, 100) / 10000);
+            $now = Carbon::now('Asia/Makassar');
+
             DB::table('devices')->insert([
-                'imei' => $fleet['imei'],
-                'name' => $fleet['name'],
-                'plate_number' => $fleet['plate'],
-                'created_at' => Carbon::now(),
-                'updated_at' => Carbon::now(),
+                'imei'           => $fleet['imei'],
+                'name'           => $fleet['name'],
+                'plate_number'   => $fleet['plate'],
+                'module_type'    => 'GT06N',
+                'fuel_ratio'     => 10.00,
+                'acc_status'     => 1,
+                'fuel_status'    => 1,
+                'last_latitude'  => $initialLat,
+                'last_longitude' => $initialLng,
+                'last_speed'     => 0,
+                'last_gps_time'  => $now,
+                'last_online'    => $now,
+                'created_at'     => $now,
+                'updated_at'     => $now,
             ]);
 
             // Posisi Awal (Sekitar Pantai Losari Makassar)
             DB::table('positions')->insert([
-                'imei' => $fleet['imei'],
-                'latitude' => -5.147665 + (rand(-100, 100) / 10000),
-                'longitude' => 119.432731 + (rand(-100, 100) / 10000),
-                'speed' => 0,
-                'course' => rand(0, 360),
-                'gps_time' => Carbon::now(),
-                'created_at' => Carbon::now(),
+                'imei'       => $fleet['imei'],
+                'latitude'   => $initialLat,
+                'longitude'  => $initialLng,
+                'speed'      => 0,
+                'course'     => rand(0, 360),
+                'gps_time'   => $now,
+                'created_at' => $now,
             ]);
         }
     }

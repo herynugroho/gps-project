@@ -26,9 +26,26 @@ class GpsServer extends Command
 
     public function handle()
     {
+        // 1. Matikan Query Log untuk mencegah memory leak pada long-running daemon
+        DB::disableQueryLog();
+
         $port = $this->argument('port');
         $controlPort = $this->argument('control_port');
-        $loop = \React\EventLoop\Factory::create();
+        $loop = \React\EventLoop\Loop::get();
+
+        // 2. Periodic timer untuk menjaga koneksi MySQL tetap hidup (mencegah wait_timeout)
+        $loop->addPeriodicTimer(60, function () {
+            try {
+                DB::select('SELECT 1');
+            } catch (\Throwable $e) {
+                $this->line(self::CLR_WARN . "⚠️ [DB] Koneksi terputus, mencoba reconnect: " . $e->getMessage() . self::CLR_RST);
+                try {
+                    DB::reconnect();
+                } catch (\Throwable $re) {
+                    $this->line(self::CLR_WARN . "❌ [DB] Gagal reconnect: " . $re->getMessage() . self::CLR_RST);
+                }
+            }
+        });
 
         try {
             $socket = new SocketServer("0.0.0.0:$port", [], $loop);
@@ -236,7 +253,9 @@ class GpsServer extends Command
                 ]);
                 $this->line(self::CLR_SUCC . "   📍 [$source] SAVE ($reason): $device->name" . self::CLR_RST);
             }
-            $this->updateStatus($device, $acc);
+
+            // Update status & denormalized last coordinates on devices table
+            $this->updateStatus($device, $acc, $lat, $lng, $speed, $time);
         } catch (\Exception $e) {
             $this->line(self::CLR_WARN . "   ⚠️ Error saving {$device->name}: " . $e->getMessage() . self::CLR_RST);
         }
@@ -267,8 +286,25 @@ class GpsServer extends Command
         return acos(min(max($dist,-1),1)) * 6371000;
     }
 
-    private function updateStatus($device, $acc) {
-        DB::table('devices')->where('imei', $device->imei)->update(['acc_status' => $acc, 'last_online' => Carbon::now(self::TZ), 'updated_at' => Carbon::now(self::TZ)]);
+    private function updateStatus($device, $acc, $lat = null, $lng = null, $speed = null, $time = null) {
+        $updateData = [
+            'acc_status'  => $acc,
+            'last_online' => Carbon::now(self::TZ),
+            'updated_at'  => Carbon::now(self::TZ),
+        ];
+
+        if ($lat !== null && $lng !== null && $lat != 0 && $lng != 0) {
+            $updateData['last_latitude'] = $lat;
+            $updateData['last_longitude'] = $lng;
+        }
+        if ($speed !== null) {
+            $updateData['last_speed'] = $speed;
+        }
+        if ($time !== null) {
+            $updateData['last_gps_time'] = $time;
+        }
+
+        DB::table('devices')->where('imei', $device->imei)->update($updateData);
     }
 
     private function saveReplyToDb($imei, $reply) {

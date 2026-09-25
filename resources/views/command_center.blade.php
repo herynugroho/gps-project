@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SECURED CONFIG - PRIMA TRACK</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap" rel="stylesheet">
@@ -136,16 +137,29 @@
         function sendRemoteCmd(cmd) {
             if(!currentImei) return;
             
-            fetch(`/api/send-command?imei=${currentImei}&command=${encodeURIComponent(cmd)}`)
-                .then(res => res.json())
-                .then(data => {
-                    if(data.status === 'success') {
-                        showToast(`SUCCESS: Perintah '${cmd}' terkirim!`);
-                    } else {
-                        alert("ERROR: " + data.msg);
-                    }
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+            fetch('/api/send-command', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken || '',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    imei: currentImei,
+                    command: cmd
                 })
-                .catch(err => alert("Koneksi ke server kontrol gagal."));
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.status === 'success') {
+                    showToast(`SUCCESS: Perintah '${cmd}' terkirim!`);
+                } else {
+                    alert("ERROR: " + (data.msg || 'Gagal mengirim perintah.'));
+                }
+            })
+            .catch(err => alert("Koneksi ke server kontrol gagal."));
         }
 
         function sendCustomCmd() {

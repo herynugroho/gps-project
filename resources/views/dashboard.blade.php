@@ -17,6 +17,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>PRIMA TRACK - Monitoring System</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -279,25 +280,38 @@
                             const iconHtml = `<div class="marker-label-container"><div class="marker-label"><i class="fa-solid fa-key" style="color:${accOn ? '#3b82f6' : '#cbd5e1'}"></i>${unit.name}</div><div class="marker-dot ${statusColor} relative flex items-center justify-center">${speed >= 5 ? '<div class="absolute inset-0 bg-green-500 rounded-full pulse"></div>' : ''}</div></div>`;
                             const customIcon = L.divIcon({ className: 'custom-icon', html: iconHtml, iconSize: [120, 50], iconAnchor: [60, 45] });
                             
+                            const popupHtml = `
+                                <div class="p-2 min-w-[150px] font-sans">
+                                    <div class="font-black text-slate-800 text-xs uppercase">${unit.name}</div>
+                                    <div class="text-[10px] text-slate-400 font-mono font-bold uppercase mb-1">${unit.plate_number}</div>
+                                    <div class="text-[11px] text-slate-600">Kecepatan: <b>${speed} km/h</b></div>
+                                    <div class="text-[11px] text-slate-600">Kontak: <b>${accOn ? 'HIDUP' : 'MATI'}</b></div>
+                                    <div class="text-[10px] text-slate-400 mt-1">Waktu: ${formatWita(unit.gps_time || unit.last_online)}</div>
+                                </div>
+                            `;
+
                             if (markers[unit.imei]) { 
-                                markers[unit.imei].setLatLng([lat, lng]).setIcon(customIcon); 
+                                markers[unit.imei].setLatLng([lat, lng]).setIcon(customIcon).setPopupContent(popupHtml); 
                             } else { 
-                                markers[unit.imei] = L.marker([lat, lng], {icon: customIcon}).on('click', () => focusUnit(unit.imei, lat, lng)); 
+                                markers[unit.imei] = L.marker([lat, lng], {icon: customIcon})
+                                    .bindPopup(popupHtml)
+                                    .on('click', () => focusUnit(unit.imei, lat, lng)); 
                                 clusterGroup.addLayer(markers[unit.imei]);
                             }
                         }
                         if (selectedImei === unit.imei) updateDetail(unit);
                     });
                     document.getElementById('unit-list').innerHTML = listHtml;
+                    filterUnits(); // Pertahankan hasil pencarian saat polling berlangsung
                 });
         }
 
         function focusUnit(imei, lat, lng) {
             selectedImei = imei;
             if (lat) {
-                map.setView([lat, lng], 18); // Zoom dekat agar cluster pecah (Spiderfy)
+                map.setView([lat, lng], 18);
                 setTimeout(() => {
-                    if(markers[imei]) markers[imei].openPopup();
+                    if (markers[imei]) markers[imei].openPopup();
                 }, 500);
             }
             document.getElementById('detail-panel').classList.remove('translate-y-[120%]');
@@ -326,7 +340,34 @@
 
         function closeDetail() { document.getElementById('detail-panel').classList.add('translate-y-[120%]'); selectedImei = null; }
         function goToHistory() { if (selectedImei) window.location.href = `/device/${selectedImei}/history`; }
-        function toggleRelay() { if(confirm('⚠️ Matikan mesin sekarang?')) alert('Command dikirim!'); }
+        
+        function toggleRelay() { 
+            if (!selectedImei) return;
+            if (confirm('⚠️ PERINGATAN KRITIS: Apakah Anda yakin ingin mematikan mesin kendaraan ini sekarang?')) {
+                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+                fetch('/api/send-command', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken || '',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        imei: selectedImei,
+                        command: 'RELAY,1#'
+                    })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert('✅ Perintah matikan mesin berhasil diteruskan.');
+                    } else {
+                        alert('⚠️ Gagal: ' + (data.msg || 'Terjadi kesalahan'));
+                    }
+                })
+                .catch(() => alert('Gagal terhubung ke server kontrol.'));
+            }
+        }
 
         setInterval(updateUI, 5000);
         updateUI();

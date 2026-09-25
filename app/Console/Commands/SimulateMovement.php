@@ -39,20 +39,28 @@ class SimulateMovement extends Command
                 $lng += (rand(-5, 5) / 10000);
                 $course = rand(0, 360);
 
+                $now = Carbon::now('Asia/Makassar');
+
                 // Update Posisi Baru ke Database
                 DB::table('positions')->insert([
-                    'imei' => $device->imei,
-                    'latitude' => $lat,
-                    'longitude' => $lng,
-                    'speed' => $speed,
-                    'course' => $course,
-                    'gps_time' => Carbon::now(),
-                    'created_at' => Carbon::now()
+                    'imei'       => $device->imei,
+                    'latitude'   => $lat,
+                    'longitude'  => $lng,
+                    'speed'      => $speed,
+                    'course'     => $course,
+                    'gps_time'   => $now,
+                    'created_at' => $now,
                 ]);
 
-                // Update status device jadi Online
+                // Update status device dan denormalized coordinate jadi Online & Moving
                 DB::table('devices')->where('imei', $device->imei)->update([
-                    'last_online' => Carbon::now()
+                    'last_latitude'  => $lat,
+                    'last_longitude' => $lng,
+                    'last_speed'     => $speed,
+                    'last_gps_time'  => $now,
+                    'acc_status'     => 1,
+                    'last_online'    => $now,
+                    'updated_at'     => $now,
                 ]);
 
                 $this->info("Mobil {$device->name} bergerak ke [$lat, $lng] Speed: $speed");

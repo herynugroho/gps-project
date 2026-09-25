@@ -297,7 +297,11 @@
                             currentSegmentPoints = [pos];
                             segmentIndex++;
                         }
-                        totalD += L.latLng([lastP.latitude, lastP.longitude]).distanceTo(pos);
+                        const pointDist = L.latLng([lastP.latitude, lastP.longitude]).distanceTo(pos);
+                        // Filter GPS Drift saat berhenti: hanya hitung jika kecepatan > 2 km/h atau pergeseran > 10m
+                        if ((p.speed && p.speed > 2) || pointDist > 10) {
+                            totalD += pointDist;
+                        }
                     }
                     lastP = p;
                 });
@@ -312,22 +316,22 @@
                     pathLines.push(poly);
                 }
 
-                // Pembuat isi tabel detail persinggahan
+                // Pembuat isi tabel detail persinggahan (Batch rendering untuk performa cepat)
                 let lastDateLabel = '';
+                let tableHtml = '';
 
                 pEvents.forEach((evt, i) => {
                     const rowId = `row-${i}`;
-                    const dateLabel = evt.start.substring(0, 10); // Format YYYY-MM-DD
-                    const timeLabel = evt.start.substring(11, 16); // Format HH:MM
+                    const dateLabel = evt.start.substring(0, 10);
+                    const timeLabel = evt.start.substring(11, 16);
                     const durLabel = Math.floor(evt.dur/60000) + ' mnt';
                     const latLngLabel = `${parseFloat(evt.lat).toFixed(5)}, <br>${parseFloat(evt.lng).toFixed(5)}`;
                     const gUrl = `https://www.google.com/maps/search/?api=1&query=${evt.lat},${evt.lng}`;
                     
                     let currentTrackColor = routeColors[i % routeColors.length];
 
-                    // PERBAIKAN: Penyisipan Garis Pembatas Antar Tanggal (Khusus Rentang Tanggal)
                     if (dateLabel !== lastDateLabel) {
-                        parkingTable.innerHTML += `
+                        tableHtml += `
                             <tr class="bg-slate-100 font-bold no-print">
                                 <td colspan="5" class="px-3 py-2 text-[10px] text-slate-500 bg-slate-100 font-black text-center tracking-wider">
                                     <i class="fa-solid fa-calendar-days mr-1"></i> TANGGAL: ${dateLabel}
@@ -337,8 +341,7 @@
                         lastDateLabel = dateLabel;
                     }
 
-                    // PERBAIKAN: Menambahkan kolom Nomor Urut (i + 1) di baris paling kiri tabel
-                    parkingTable.innerHTML += `
+                    tableHtml += `
                         <tr id="${rowId}" onclick="focusLocation(${evt.lat}, ${evt.lng}, '${rowId}')" class="cursor-pointer hover:bg-slate-50 transition border-l-4 border-transparent group">
                             <td class="px-3 py-4 text-[11px] font-bold text-slate-400 text-center">${i + 1}</td>
                             <td class="px-3 py-4 text-[11px] font-bold text-slate-700">
@@ -381,6 +384,8 @@
                     m.on('click', () => highlightRow(rowId));
                     parkingMarkers.push(m);
                 });
+
+                parkingTable.innerHTML = tableHtml;
 
                 if (points.length > 0) {
                     map.fitBounds(L.polyline(points).getBounds(), { padding: [50, 50] });
