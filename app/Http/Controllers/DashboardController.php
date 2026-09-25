@@ -309,29 +309,7 @@ class DashboardController extends Controller
             ->orderBy('gps_time', 'asc')
             ->get();
 
-        $parkingPoints = [];
-        $lastP = null;
-
-        foreach ($positions as $p) {
-            if ($lastP) {
-                $t1 = strtotime($p->gps_time);
-                $t2 = strtotime($lastP->gps_time);
-                $timeDiff = $t1 - $t2;
-
-                // Mendeteksi jeda singgah/parkir (> 5 menit = 300 detik)
-                if ($timeDiff > 300) {
-                    $durasiMenit = floor($timeDiff / 60);
-                    $waktuMulai = Carbon::parse($lastP->gps_time)->toDateTimeString();
-
-                    $parkingPoints[] = (object)[
-                        'waktu_mulai' => $waktuMulai,
-                        'durasi'      => $durasiMenit . ' mnt',
-                        'koordinat'   => $lastP->latitude . ',' . $lastP->longitude
-                    ];
-                }
-            }
-            $lastP = $p;
-        }
+        $parkingPoints = $this->calculateParkingPoints($positions);
 
         // Ambil data verifikasi manajemen yang sudah tersimpan
         $verifiedData = VerifikasiParkir::where('vehicle_id', $deviceId)
@@ -403,22 +381,7 @@ class DashboardController extends Controller
             ->orderBy('gps_time', 'asc')
             ->get();
 
-        $parkingPoints = [];
-        $lastP = null;
-
-        foreach ($positions as $p) {
-            if ($lastP) {
-                $timeDiff = strtotime($p->gps_time) - strtotime($lastP->gps_time);
-                if ($timeDiff > 300) {
-                    $parkingPoints[] = [
-                        'waktu_mulai' => Carbon::parse($lastP->gps_time)->toDateTimeString(),
-                        'durasi'      => floor($timeDiff / 60) . ' mnt',
-                        'koordinat'   => $lastP->latitude . ',' . $lastP->longitude,
-                    ];
-                }
-            }
-            $lastP = $p;
-        }
+        $parkingPoints = $this->calculateParkingPoints($positions);
 
         $verifiedData = VerifikasiParkir::where('vehicle_id', $deviceId)
             ->whereDate('waktu_mulai', $date)
@@ -448,12 +411,12 @@ class DashboardController extends Controller
         ], ';');
 
         foreach ($parkingPoints as $index => $point) {
-            $match = $verifiedData->get($point['waktu_mulai']);
+            $match = $verifiedData->get($point->waktu_mulai);
             fputcsv($file, [
                 $index + 1,
-                $point['waktu_mulai'],
-                $point['durasi'],
-                $point['koordinat'],
+                $point->waktu_mulai,
+                $point->durasi,
+                $point->koordinat,
                 $match ? $match->lat_long_pengerjaan : '',
                 $match ? $match->keterangan : '',
                 $match ? 'Sudah Diverifikasi' : 'Belum Diverifikasi'
@@ -473,5 +436,73 @@ class DashboardController extends Controller
             "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
             "Expires"             => "0"
         ]);
+    }
+
+    /**
+     * Hitung titik parkir secara cerdas:
+     * 1. Deteksi jeda henti (timeDiff > 300s).
+     * 2. Filter blank spot (jika jarak > 500m dan kendaraan melaju > 15 km/h, bukan parkir).
+     * 3. Smart Merge: Gabungkan henti berturut-turut di radius < 100m menjadi 1 sesi parkir utuh.
+     */
+    private function calculateParkingPoints($positions)
+    {
+        $parkingPoints = [];
+        $currentParking = null;
+        $lastP = null;
+
+        foreach ($positions as $p) {
+            if ($lastP) {
+                $timeDiff = strtotime($p->gps_time) - strtotime($lastP->gps_time);
+
+                if ($timeDiff > 300) {
+                    $dist = $this->haversineMeters($lastP->latitude, $lastP->longitude, $p->latitude, $p->longitude);
+
+                    // Abaikan lonjakan akibat hilang sinyal/blank spot saat kendaraan sedang melaju
+                    $isMovingLoss = ($dist > 500 && (($lastP->speed ?? 0) > 15 || ($p->speed ?? 0) > 15));
+
+                    if (!$isMovingLoss) {
+                        if ($currentParking && $this->haversineMeters($currentParking['lat'], $currentParking['lng'], $lastP->latitude, $lastP->longitude) < 100) {
+                            // Perpanjang sesi parkir yang sama di lokasi berdekatan
+                            $currentParking['end_time'] = $p->gps_time;
+                        } else {
+                            if ($currentParking) {
+                                $durasiMenit = max(1, floor((strtotime($currentParking['end_time']) - strtotime($currentParking['start_time'])) / 60));
+                                $parkingPoints[] = (object)[
+                                    'waktu_mulai' => Carbon::parse($currentParking['start_time'])->toDateTimeString(),
+                                    'durasi'      => $durasiMenit . ' mnt',
+                                    'koordinat'   => $currentParking['lat'] . ',' . $currentParking['lng'],
+                                ];
+                            }
+                            $currentParking = [
+                                'start_time' => $lastP->gps_time,
+                                'end_time'   => $p->gps_time,
+                                'lat'        => $lastP->latitude,
+                                'lng'        => $lastP->longitude,
+                            ];
+                        }
+                    }
+                }
+            }
+            $lastP = $p;
+        }
+
+        if ($currentParking) {
+            $durasiMenit = max(1, floor((strtotime($currentParking['end_time']) - strtotime($currentParking['start_time'])) / 60));
+            $parkingPoints[] = (object)[
+                'waktu_mulai' => Carbon::parse($currentParking['start_time'])->toDateTimeString(),
+                'durasi'      => $durasiMenit . ' mnt',
+                'koordinat'   => $currentParking['lat'] . ',' . $currentParking['lng'],
+            ];
+        }
+
+        return $parkingPoints;
+    }
+
+    private function haversineMeters($lat1, $lon1, $lat2, $lon2)
+    {
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lon2 - $lon1);
+        $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+        return 6371000 * 2 * atan2(sqrt($a), sqrt(1 - $a));
     }
 }

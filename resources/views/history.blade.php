@@ -284,25 +284,42 @@
                         const t1 = new Date(p.gps_time.replace(' ', 'T')).getTime();
                         const t2 = new Date(lastP.gps_time.replace(' ', 'T')).getTime();
                         const timeDiff = t1 - t2;
-                        
-                        if (timeDiff > 300000) { 
-                            pEvents.push({ lat: lastP.latitude, lng: lastP.longitude, start: lastP.gps_time, dur: timeDiff });
-                            
-                            // PERBAIKAN: Gambar jalur segmen ini sebelum beralih ke segmen pasca parkir berikutnya
-                            if (currentSegmentPoints.length > 1) {
-                                let poly = L.polyline(currentSegmentPoints, { 
-                                    color: routeColors[segmentIndex % routeColors.length], 
-                                    weight: 5, 
-                                    opacity: 0.85 
-                                }).addTo(map);
-                                pathLines.push(poly);
-                            }
-
-                            // Reset koordinat segmen baru dimulai dari lokasi parkir ini
-                            currentSegmentPoints = [pos];
-                            segmentIndex++;
-                        }
                         const pointDist = L.latLng([lastP.latitude, lastP.longitude]).distanceTo(pos);
+
+                        if (timeDiff > 300000) { 
+                            // Filter blank spot: jika pergeseran > 500m dan kendaraan melaju > 15 km/h, bukan parkir
+                            const isMovingLoss = (pointDist > 500 && ((lastP.speed && lastP.speed > 15) || (p.speed && p.speed > 15)));
+
+                            if (!isMovingLoss) {
+                                const lastEvent = pEvents.length > 0 ? pEvents[pEvents.length - 1] : null;
+                                // Smart Merge: jika lokasi berdekatan (< 100m) dengan parkir sebelumnya, perpanjang sesi
+                                if (lastEvent && L.latLng([lastEvent.lat, lastEvent.lng]).distanceTo([lastP.latitude, lastP.longitude]) < 100) {
+                                    lastEvent.dur = t1 - new Date(lastEvent.start.replace(' ', 'T')).getTime();
+                                } else {
+                                    pEvents.push({ 
+                                        lat: lastP.latitude, 
+                                        lng: lastP.longitude, 
+                                        start: lastP.gps_time, 
+                                        dur: timeDiff 
+                                    });
+                                    
+                                    // PERBAIKAN: Gambar jalur segmen ini sebelum beralih ke segmen pasca parkir berikutnya
+                                    if (currentSegmentPoints.length > 1) {
+                                        let poly = L.polyline(currentSegmentPoints, { 
+                                            color: routeColors[segmentIndex % routeColors.length], 
+                                            weight: 5, 
+                                            opacity: 0.85 
+                                        }).addTo(map);
+                                        pathLines.push(poly);
+                                    }
+
+                                    // Reset koordinat segmen baru dimulai dari lokasi parkir ini
+                                    currentSegmentPoints = [pos];
+                                    segmentIndex++;
+                                }
+                            }
+                        }
+
                         // Filter anomali lonjakan teleportasi (> 50 km antara 2 titik)
                         if (pointDist < 50000) {
                             // Filter GPS Drift saat berhenti: hanya hitung jika kecepatan > 2 km/h atau pergeseran > 10m

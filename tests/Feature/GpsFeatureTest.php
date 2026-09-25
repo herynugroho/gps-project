@@ -192,5 +192,67 @@ class GpsFeatureTest extends TestCase
             $this->assertLessThanOrEqual(180, (float)$coords[1]);
         }
     }
+
+    public function test_verifikasi_merges_contiguous_parking_and_ignores_moving_blank_spots(): void
+    {
+        // Bersihkan posisi sebelumnya untuk pengujian terkontrol
+        Position::where('imei', $this->device->imei)->delete();
+        $date = '2026-09-25';
+
+        // 1. Sesi Parkir Berkelanjutan: Tiba jam 10:00, heartbeat jam 10:15 di titik yang sama, berangkat jam 10:30
+        Position::create([
+            'imei' => $this->device->imei,
+            'latitude' => -5.147665,
+            'longitude' => 119.432731,
+            'speed' => 0,
+            'course' => 0,
+            'gps_time' => "{$date} 10:00:00",
+        ]);
+        Position::create([
+            'imei' => $this->device->imei,
+            'latitude' => -5.147665,
+            'longitude' => 119.432731,
+            'speed' => 0,
+            'course' => 0,
+            'gps_time' => "{$date} 10:15:00",
+        ]);
+        Position::create([
+            'imei' => $this->device->imei,
+            'latitude' => -5.147700,
+            'longitude' => 119.432750,
+            'speed' => 20,
+            'course' => 90,
+            'gps_time' => "{$date} 10:30:00",
+        ]);
+
+        // 2. Blank Spot saat Melaju: Kecepatan 50 km/h, terputus 10 menit, tersambung 3 km berikutnya di kecepatan 45 km/h
+        Position::create([
+            'imei' => $this->device->imei,
+            'latitude' => -5.150000,
+            'longitude' => 119.440000,
+            'speed' => 50,
+            'course' => 90,
+            'gps_time' => "{$date} 11:00:00",
+        ]);
+        Position::create([
+            'imei' => $this->device->imei,
+            'latitude' => -5.170000,
+            'longitude' => 119.460000,
+            'speed' => 45,
+            'course' => 90,
+            'gps_time' => "{$date} 11:10:00",
+        ]);
+
+        $response = $this->actingAs($this->user)->getJson("/management/verifikasi/data?device_id={$this->device->id}&date={$date}");
+        $response->assertStatus(200);
+
+        $data = $response->json();
+
+        // Harus menghasilkan tepat 1 sesi parkir (bukan 2 sesi bertumpuk, dan blank spot tidak dihitung parkir)
+        $this->assertCount(1, $data);
+        $this->assertEquals('30 mnt', $data[0]['durasi']);
+        $this->assertStringContainsString('-5.147665,119.432731', $data[0]['koordinat_gps']);
+    }
 }
+
 

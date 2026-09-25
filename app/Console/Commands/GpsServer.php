@@ -289,7 +289,10 @@ class GpsServer extends Command
             $gpsTime = Carbon::create(2000+$y, $m, $d, $h, $i, $s, 'UTC')->setTimezone(self::TZ);
             $serverTime = Carbon::now(self::TZ);
 
-            if ($gpsTime->gt($serverTime)) {
+            // Berikan batas toleransi wajar (15 menit ke depan) agar sinkronisasi clock host vs satelit
+            // tidak memotong detik asli menjadi detik server yang sama (mencegah timestamp duplikat).
+            // Juga cegah anomali tanggal rusak/kadaluarsa (> 1 tahun lalu).
+            if ($gpsTime->gt($serverTime->copy()->addMinutes(15)) || $gpsTime->lt($serverTime->copy()->subYears(1))) {
                 return $serverTime;
             }
             return $gpsTime;
