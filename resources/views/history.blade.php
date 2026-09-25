@@ -271,7 +271,12 @@
                 let segmentIndex = 0;
 
                 data.forEach((p) => {
-                    const pos = [parseFloat(p.latitude), parseFloat(p.longitude)];
+                    const lat = parseFloat(p.latitude);
+                    const lng = parseFloat(p.longitude);
+                    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+                        return;
+                    }
+                    const pos = [lat, lng];
                     points.push(pos);
                     currentSegmentPoints.push(pos);
 
@@ -298,9 +303,12 @@
                             segmentIndex++;
                         }
                         const pointDist = L.latLng([lastP.latitude, lastP.longitude]).distanceTo(pos);
-                        // Filter GPS Drift saat berhenti: hanya hitung jika kecepatan > 2 km/h atau pergeseran > 10m
-                        if ((p.speed && p.speed > 2) || pointDist > 10) {
-                            totalD += pointDist;
+                        // Filter anomali lonjakan teleportasi (> 50 km antara 2 titik)
+                        if (pointDist < 50000) {
+                            // Filter GPS Drift saat berhenti: hanya hitung jika kecepatan > 2 km/h atau pergeseran > 10m
+                            if ((p.speed && p.speed > 2) || pointDist > 10) {
+                                totalD += pointDist;
+                            }
                         }
                     }
                     lastP = p;
@@ -396,7 +404,7 @@
                 const estLiters = distKm / FUEL_RATIO;
                 const estCost = estLiters * FUEL_PRICE_PER_LITER;
 
-                document.getElementById('stat-points').innerText = data.length.toLocaleString();
+                document.getElementById('stat-points').innerText = points.length.toLocaleString();
                 document.getElementById('stat-parking').innerText = pEvents.length;
                 document.getElementById('stat-dist').innerText = distKm.toFixed(2);
                 

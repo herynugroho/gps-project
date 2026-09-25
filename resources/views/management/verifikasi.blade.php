@@ -399,8 +399,10 @@ $(document).ready(function() {
         let realLat = parseFloat(realArr[0].trim());
         let realLng = parseFloat(realArr[1].trim());
 
-        if (isNaN(gpsLat) || isNaN(gpsLng) || isNaN(realLat) || isNaN(realLng)) {
-            alert('Format penulisan koordinat salah!');
+        if (isNaN(gpsLat) || isNaN(gpsLng) || isNaN(realLat) || isNaN(realLng) ||
+            gpsLat < -90 || gpsLat > 90 || gpsLng < -180 || gpsLng > 180 ||
+            realLat < -90 || realLat > 90 || realLng < -180 || realLng > 180) {
+            alert('Format penulisan koordinat salah atau di luar batas geografis bumi!');
             return;
         }
 

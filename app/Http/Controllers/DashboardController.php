@@ -109,7 +109,9 @@ class DashboardController extends Controller
 
     public function getHistoryApi(Request $request, $imei)
     {
-        $query = Position::where('imei', $imei);
+        $query = Position::where('imei', $imei)
+            ->whereBetween('latitude', [-90, 90])
+            ->whereBetween('longitude', [-180, 180]);
 
         // 1. Jika mode "Tanggal Spesifik" (?date=...)
         if ($request->filled('date')) {
@@ -301,6 +303,8 @@ class DashboardController extends Controller
         }
 
         $positions = Position::where('imei', $device->imei)
+            ->whereBetween('latitude', [-90, 90])
+            ->whereBetween('longitude', [-180, 180])
             ->whereDate('gps_time', $date)
             ->orderBy('gps_time', 'asc')
             ->get();
@@ -393,6 +397,8 @@ class DashboardController extends Controller
         }
 
         $positions = Position::where('imei', $device->imei)
+            ->whereBetween('latitude', [-90, 90])
+            ->whereBetween('longitude', [-180, 180])
             ->whereDate('gps_time', $date)
             ->orderBy('gps_time', 'asc')
             ->get();

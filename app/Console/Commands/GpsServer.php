@@ -162,20 +162,24 @@ class GpsServer extends Command
             if ($currentImei) { $this->saveReplyToDb($currentImei, $replyText); }
         }
         elseif (in_array($protocolId, ['22', '12', '16', 'a0'])) {
-            $latByte = ($is4G && $protocolId == '22') ? 12 : 11;
-            if ($protocolId == '16') $latByte = $is4G ? 13 : 12;
+            // Pada 4G (header 7979), panjang paket 2 byte sehingga offset bergeser 1 byte dibanding 2G (7878)
+            $latByte = $is4G ? 12 : 11;
             $gpsTime = $this->parseGpsTime(substr($hex, ($latByte - 7) * 2, 12));
             $latVal = hexdec(substr($hex, $latByte * 2, 8));
             $lngVal = hexdec(substr($hex, ($latByte + 4) * 2, 8));
-            if ($latVal > 0) {
+            if ($latVal > 0 && $lngVal > 0) {
                 $lat = $latVal / 1800000; $lng = $lngVal / 1800000;
                 $courseStatus = hexdec(substr($hex, ($latByte + 9) * 2, 4));
                 if (!($courseStatus & 0x0400)) $lat = -$lat;
                 if ($courseStatus & 0x0800) $lng = -$lng;
-                $device = DB::table('devices')->where('imei', $currentImei)->first();
-                if($device) {
-                    $acc = (hexdec(substr($hex, ($latByte+13)*2, 2)) & 0x02 ? 1:0);
-                    $this->savePosition($device, $lat, $lng, hexdec(substr($hex, ($latByte+8)*2, 2)), $acc, $gpsTime, "BIN");
+
+                // Validasi rentang koordinat sebelum memproses
+                if ($lat >= -90 && $lat <= 90 && $lng >= -180 && $lng <= 180) {
+                    $device = DB::table('devices')->where('imei', $currentImei)->first();
+                    if($device) {
+                        $acc = (hexdec(substr($hex, ($latByte+13)*2, 2)) & 0x02 ? 1:0);
+                        $this->savePosition($device, $lat, $lng, hexdec(substr($hex, ($latByte+8)*2, 2)), $acc, $gpsTime, "BIN");
+                    }
                 }
             }
         }
@@ -222,7 +226,17 @@ class GpsServer extends Command
 
     private function savePosition($device, $lat, $lng, $speed, $acc, $time, $source) {
         try {
-            if ($lat == 0 || $lng == 0) return;
+            // 1. Sanity check: validasi koordinat absolut di bumi
+            if ($lat == 0 || $lng == 0 || $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+                return;
+            }
+
+            // 2. Sanity check: filter koordinat di luar wilayah Indonesia (Lat -15 s/d 10, Lng 95 s/d 145)
+            if ($lat < -15 || $lat > 10 || $lng < 95 || $lng > 145) {
+                $this->line(self::CLR_WARN . "   ⚠️ [ANOMALY] Out-of-region coordinates rejected: [$lat, $lng] for {$device->name}" . self::CLR_RST);
+                return;
+            }
+
             $lastPos = DB::table('positions')->where('imei', $device->imei)->orderBy('id', 'desc')->first();
             $shouldSave = false; $reason = "";
             
@@ -231,10 +245,14 @@ class GpsServer extends Command
             } else {
                 $distance = $this->calculateDistance($lastPos->latitude, $lastPos->longitude, $lat, $lng);
                 
-                // PERBAIKAN V8.3: Bandingkan berdasarkan Waktu Satelit (gps_time) bukan Waktu Server (created_at)
-                // Ini mencegah error "Time Anchor" spam saat alat mengirim data buffer dari area blank spot
+                // 3. Teleportation Filter: cegah anomali lonjakan > 50km dalam kurun < 5 menit (kecepatan > 600 km/h)
                 $lastGpsTime = Carbon::parse($lastPos->gps_time, self::TZ);
-                $timeDiff = Carbon::parse($time, self::TZ)->diffInSeconds($lastGpsTime);
+                $timeDiff = abs(Carbon::parse($time, self::TZ)->diffInSeconds($lastGpsTime));
+
+                if ($distance > 50000 && $timeDiff < 300) {
+                    $this->line(self::CLR_WARN . "   ⚠️ [TELEPORT] Impossible displacement (" . round($distance/1000) . " km in {$timeDiff}s) rejected for {$device->name}" . self::CLR_RST);
+                    return;
+                }
                 
                 if ($device->acc_status != $acc) { $shouldSave = true; $reason = "ACC Change"; }
                 elseif ($speed > 5) { $shouldSave = true; $reason = "Moving"; }

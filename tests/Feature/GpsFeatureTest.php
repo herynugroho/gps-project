@@ -156,4 +156,41 @@ class GpsFeatureTest extends TestCase
 
         $response->assertStatus(403);
     }
+
+    public function test_history_and_verifikasi_ignore_corrupt_coordinates(): void
+    {
+        // Masukkan data posisi anomali (misal akibat byte shift protokol)
+        Position::create([
+            'imei' => $this->device->imei,
+            'latitude' => -1319.46,
+            'longitude' => 1942.92,
+            'speed' => 0,
+            'course' => 0,
+            'gps_time' => Carbon::now('Asia/Makassar')->subMinutes(10),
+        ]);
+
+        $response = $this->actingAs($this->user)->getJson("/api/history/{$this->device->imei}");
+        $response->assertStatus(200);
+
+        $json = $response->json();
+        foreach ($json as $item) {
+            $this->assertGreaterThanOrEqual(-90, (float)$item['latitude']);
+            $this->assertLessThanOrEqual(90, (float)$item['latitude']);
+            $this->assertGreaterThanOrEqual(-180, (float)$item['longitude']);
+            $this->assertLessThanOrEqual(180, (float)$item['longitude']);
+        }
+
+        // Verifikasi parkir juga mengabaikan data anomali
+        $date = Carbon::today('Asia/Makassar')->toDateString();
+        $verifResponse = $this->actingAs($this->user)->getJson("/management/verifikasi/data?device_id={$this->device->id}&date={$date}");
+        $verifResponse->assertStatus(200);
+        foreach ($verifResponse->json() as $point) {
+            $coords = explode(',', $point['koordinat_gps']);
+            $this->assertGreaterThanOrEqual(-90, (float)$coords[0]);
+            $this->assertLessThanOrEqual(90, (float)$coords[0]);
+            $this->assertGreaterThanOrEqual(-180, (float)$coords[1]);
+            $this->assertLessThanOrEqual(180, (float)$coords[1]);
+        }
+    }
 }
+
