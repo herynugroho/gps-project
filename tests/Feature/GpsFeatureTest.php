@@ -109,6 +109,11 @@ class GpsFeatureTest extends TestCase
             'latitude' => -5.147665,
             'longitude' => 119.432731,
         ]);
+
+        $data = $response->json();
+        $this->assertNotEmpty($data);
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $data[0]['gps_time']);
+        $this->assertStringNotContainsString('Z', $data[0]['gps_time']);
     }
 
     public function test_send_command_validates_and_rejects_unauthorized_commands(): void

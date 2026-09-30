@@ -28,4 +28,9 @@ class Position extends Model
     {
         return $this->belongsTo(Device::class, 'imei', 'imei');
     }
+
+    protected function serializeDate(\DateTimeInterface $date): string
+    {
+        return $date->format('Y-m-d H:i:s');
+    }
 }

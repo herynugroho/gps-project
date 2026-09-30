@@ -484,8 +484,7 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            const d = new Date();
-            const today = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, '0') + "-" + String(d.getDate()).padStart(2, '0');
+            const today = "{{ \Carbon\Carbon::now('Asia/Makassar')->format('Y-m-d') }}";
             document.getElementById('date-single').value = today;
             document.getElementById('date-start').value = today;
             document.getElementById('date-end').value = today;

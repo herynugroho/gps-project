@@ -115,7 +115,8 @@ class DashboardController extends Controller
 
         // 1. Jika mode "Tanggal Spesifik" (?date=...)
         if ($request->filled('date')) {
-            $query->whereDate('gps_time', $request->date);
+            $query->where('gps_time', '>=', $request->date . ' 00:00:00')
+                  ->where('gps_time', '<=', $request->date . ' 23:59:59');
         } 
         // 2. Jika mode "Rentang Tanggal" (?start=...&end=...)
         elseif ($request->filled('start') && $request->filled('end')) {
@@ -124,10 +125,23 @@ class DashboardController extends Controller
         } 
         // 3. Default: Hari Ini (WITA)
         else {
-            $query->whereDate('gps_time', Carbon::today(self::TZ));
+            $today = Carbon::today(self::TZ)->toDateString();
+            $query->where('gps_time', '>=', $today . ' 00:00:00')
+                  ->where('gps_time', '<=', $today . ' 23:59:59');
         }
 
-        $history = $query->orderBy('gps_time', 'asc')->get();
+        $history = $query->orderBy('gps_time', 'asc')->get()->map(function ($item) {
+            return [
+                'id'        => $item->id,
+                'imei'      => $item->imei,
+                'latitude'  => (float) $item->latitude,
+                'longitude' => (float) $item->longitude,
+                'speed'     => (float) $item->speed,
+                'course'    => (int) $item->course,
+                'gps_time'  => $item->gps_time ? $item->gps_time->format('Y-m-d H:i:s') : null,
+            ];
+        });
+
         return response()->json($history);
     }
 
@@ -305,7 +319,8 @@ class DashboardController extends Controller
         $positions = Position::where('imei', $device->imei)
             ->whereBetween('latitude', [-90, 90])
             ->whereBetween('longitude', [-180, 180])
-            ->whereDate('gps_time', $date)
+            ->where('gps_time', '>=', $date . ' 00:00:00')
+            ->where('gps_time', '<=', $date . ' 23:59:59')
             ->orderBy('gps_time', 'asc')
             ->get();
 
@@ -313,7 +328,8 @@ class DashboardController extends Controller
 
         // Ambil data verifikasi manajemen yang sudah tersimpan
         $verifiedData = VerifikasiParkir::where('vehicle_id', $deviceId)
-            ->whereDate('waktu_mulai', $date)
+            ->where('waktu_mulai', '>=', $date . ' 00:00:00')
+            ->where('waktu_mulai', '<=', $date . ' 23:59:59')
             ->get()
             ->keyBy(function($item) {
                 return Carbon::parse($item->waktu_mulai)->toDateTimeString();
@@ -377,14 +393,16 @@ class DashboardController extends Controller
         $positions = Position::where('imei', $device->imei)
             ->whereBetween('latitude', [-90, 90])
             ->whereBetween('longitude', [-180, 180])
-            ->whereDate('gps_time', $date)
+            ->where('gps_time', '>=', $date . ' 00:00:00')
+            ->where('gps_time', '<=', $date . ' 23:59:59')
             ->orderBy('gps_time', 'asc')
             ->get();
 
         $parkingPoints = $this->calculateParkingPoints($positions);
 
         $verifiedData = VerifikasiParkir::where('vehicle_id', $deviceId)
-            ->whereDate('waktu_mulai', $date)
+            ->where('waktu_mulai', '>=', $date . ' 00:00:00')
+            ->where('waktu_mulai', '<=', $date . ' 23:59:59')
             ->get()
             ->keyBy(function($item) {
                 return Carbon::parse($item->waktu_mulai)->toDateTimeString();

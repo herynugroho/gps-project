@@ -259,6 +259,10 @@ class GpsServer extends Command
                 elseif ($timeDiff >= 300) { $shouldSave = true; $reason = "Anchor"; }
                 elseif ($distance > 20) { $shouldSave = true; $reason = "Displacement"; }
             }
+
+            $timeFormatted = ($time instanceof \DateTimeInterface)
+                ? Carbon::instance($time)->setTimezone(self::TZ)->format('Y-m-d H:i:s')
+                : Carbon::parse($time, self::TZ)->setTimezone(self::TZ)->format('Y-m-d H:i:s');
             
             if ($shouldSave) {
                 DB::table('positions')->insert([
@@ -266,14 +270,14 @@ class GpsServer extends Command
                     'latitude' => $lat, 
                     'longitude' => $lng, 
                     'speed' => $speed, 
-                    'gps_time' => $time, 
-                    'created_at' => Carbon::now(self::TZ)
+                    'gps_time' => $timeFormatted, 
+                    'created_at' => Carbon::now(self::TZ)->format('Y-m-d H:i:s')
                 ]);
                 $this->line(self::CLR_SUCC . "   📍 [$source] SAVE ($reason): $device->name" . self::CLR_RST);
             }
 
             // Update status & denormalized last coordinates on devices table
-            $this->updateStatus($device, $acc, $lat, $lng, $speed, $time);
+            $this->updateStatus($device, $acc, $lat, $lng, $speed, $timeFormatted);
         } catch (\Exception $e) {
             $this->line(self::CLR_WARN . "   ⚠️ Error saving {$device->name}: " . $e->getMessage() . self::CLR_RST);
         }
@@ -308,10 +312,11 @@ class GpsServer extends Command
     }
 
     private function updateStatus($device, $acc, $lat = null, $lng = null, $speed = null, $time = null) {
+        $nowFormatted = Carbon::now(self::TZ)->format('Y-m-d H:i:s');
         $updateData = [
             'acc_status'  => $acc,
-            'last_online' => Carbon::now(self::TZ),
-            'updated_at'  => Carbon::now(self::TZ),
+            'last_online' => $nowFormatted,
+            'updated_at'  => $nowFormatted,
         ];
 
         if ($lat !== null && $lng !== null && $lat != 0 && $lng != 0) {
@@ -322,7 +327,9 @@ class GpsServer extends Command
             $updateData['last_speed'] = $speed;
         }
         if ($time !== null) {
-            $updateData['last_gps_time'] = $time;
+            $updateData['last_gps_time'] = ($time instanceof \DateTimeInterface)
+                ? Carbon::instance($time)->setTimezone(self::TZ)->format('Y-m-d H:i:s')
+                : Carbon::parse($time, self::TZ)->setTimezone(self::TZ)->format('Y-m-d H:i:s');
         }
 
         DB::table('devices')->where('imei', $device->imei)->update($updateData);

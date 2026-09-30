@@ -48,4 +48,9 @@ class Device extends Model
     {
         return $this->hasMany(VerifikasiParkir::class, 'vehicle_id', 'id');
     }
+
+    protected function serializeDate(\DateTimeInterface $date): string
+    {
+        return $date->format('Y-m-d H:i:s');
+    }
 }
