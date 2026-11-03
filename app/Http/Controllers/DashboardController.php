@@ -456,6 +456,245 @@ class DashboardController extends Controller
         ]);
     }
 
+    public function indexRekapRiwayat(Request $request)
+    {
+        $date = $request->query('date', Carbon::today(self::TZ)->toDateString());
+        $recapData = $this->getFleetHistoryRecap($date);
+
+        return view('management.rekap_riwayat', [
+            'date'     => $date,
+            'summary'  => $recapData['summary'],
+            'vehicles' => $recapData['vehicles'],
+        ]);
+    }
+
+    public function getRekapRiwayatData(Request $request)
+    {
+        $date = $request->query('date', Carbon::today(self::TZ)->toDateString());
+        $recapData = $this->getFleetHistoryRecap($date);
+
+        return response()->json($recapData);
+    }
+
+    public function exportRekapRiwayat(Request $request)
+    {
+        $date = $request->query('date', Carbon::today(self::TZ)->toDateString());
+        $recapData = $this->getFleetHistoryRecap($date);
+
+        $file = fopen('php://temp', 'r+');
+        fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF)); // UTF-8 BOM
+
+        fputcsv($file, ["LAPORAN REKAPAN RIWAYAT & OPERASIONAL ARMADA - PRIMA TRACK"], ';');
+        fputcsv($file, ["Tanggal Rekap", $date . ' (WITA)'], ';');
+        fputcsv($file, ["Waktu Unduh", Carbon::now(self::TZ)->format('Y-m-d H:i:s') . ' WITA'], ';');
+        fputcsv($file, [], ';');
+
+        fputcsv($file, ["RINGKASAN TOTAL ARMADA"], ';');
+        fputcsv($file, ["Total Armada Terdaftar", $recapData['summary']['total_vehicles'] . " Unit"], ';');
+        fputcsv($file, ["Armada Beroperasi (Aktif)", $recapData['summary']['active_vehicles'] . " Unit"], ';');
+        fputcsv($file, ["Total Titik Sinyal GPS", number_format($recapData['summary']['total_points'], 0, ',', '.') . " Titik"], ';');
+        fputcsv($file, ["Total Jarak Tempuh", number_format($recapData['summary']['total_distance_km'], 2, ',', '.') . " km"], ';');
+        fputcsv($file, ["Total Persinggahan / Parkir", $recapData['summary']['total_parking_count'] . " Titik (" . $recapData['summary']['total_parking_formatted'] . ")"], ';');
+        fputcsv($file, ["Total Estimasi BBM", number_format($recapData['summary']['total_fuel_liters'], 2, ',', '.') . " Liter (Rp " . number_format($recapData['summary']['total_fuel_cost'], 0, ',', '.') . ")"], ';');
+        fputcsv($file, [], ';');
+
+        fputcsv($file, [
+            "No",
+            "Nama Armada",
+            "Nomor Plat",
+            "IMEI",
+            "Tipe Modul",
+            "Sinyal GPS (Titik)",
+            "Rentang Jam Operasional (WITA)",
+            "Titik Parkir",
+            "Total Durasi Parkir",
+            "Jarak Tempuh (km)",
+            "Rasio BBM (km/L)",
+            "Est. Konsumsi BBM (L)",
+            "Est. Biaya BBM (Rp)",
+            "Status Operasional"
+        ], ';');
+
+        foreach ($recapData['vehicles'] as $index => $v) {
+            fputcsv($file, [
+                $index + 1,
+                $v['name'],
+                $v['plate_number'],
+                $v['imei'],
+                $v['module_type'],
+                $v['points'],
+                $v['points'] > 0 ? ($v['first_gps_time'] . ' - ' . $v['last_gps_time']) : '-',
+                $v['parking_count'] . ' Titik',
+                $v['parking_formatted'],
+                number_format($v['distance_km'], 2, ',', '.'),
+                '1:' . $v['fuel_ratio'],
+                number_format($v['fuel_liters'], 2, ',', '.'),
+                number_format($v['fuel_cost'], 0, ',', '.'),
+                $v['status_label']
+            ], ';');
+        }
+
+        rewind($file);
+        $csvContent = stream_get_contents($file);
+        fclose($file);
+
+        $filename = "Rekap_Riwayat_Armada_" . $date . ".csv";
+
+        return response($csvContent, 200, [
+            "Content-type"        => "text/csv; charset=utf-8",
+            "Content-Disposition" => "attachment; filename=\"$filename\"",
+            "Pragma"              => "no-cache",
+            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
+            "Expires"             => "0"
+        ]);
+    }
+
+    private function getFleetHistoryRecap(string $date): array
+    {
+        $start = $date . ' 00:00:00';
+        $end   = $date . ' 23:59:59';
+
+        $devices = Device::orderBy('name', 'asc')->get();
+
+        $allPositions = Position::where('gps_time', '>=', $start)
+            ->where('gps_time', '<=', $end)
+            ->whereBetween('latitude', [-90, 90])
+            ->whereBetween('longitude', [-180, 180])
+            ->orderBy('gps_time', 'asc')
+            ->get()
+            ->groupBy('imei');
+
+        $vehicles = [];
+        $totalDistanceKm = 0;
+        $totalParkingCount = 0;
+        $totalParkingSec = 0;
+        $totalFuelLiters = 0;
+        $totalFuelCost = 0;
+        $totalPoints = 0;
+        $activeVehiclesCount = 0;
+
+        foreach ($devices as $dev) {
+            $positions = $allPositions->get($dev->imei, collect());
+            $pointsCount = $positions->count();
+            $totalPoints += $pointsCount;
+
+            $totalDistMeters = 0;
+            $parkingEvents = [];
+            $lastP = null;
+            $firstTime = null;
+            $lastTime = null;
+
+            if ($pointsCount > 0) {
+                $activeVehiclesCount++;
+                $firstTime = $positions->first()->gps_time ? Carbon::parse($positions->first()->gps_time)->format('H:i') : null;
+                $lastTime  = $positions->last()->gps_time ? Carbon::parse($positions->last()->gps_time)->format('H:i') : null;
+
+                foreach ($positions as $p) {
+                    $lat = (float) $p->latitude;
+                    $lng = (float) $p->longitude;
+
+                    if ($lastP) {
+                        $t1 = strtotime($p->gps_time);
+                        $t2 = strtotime($lastP->gps_time);
+                        $timeDiff = $t1 - $t2;
+                        $pointDist = $this->haversineMeters((float)$lastP->latitude, (float)$lastP->longitude, $lat, $lng);
+
+                        if ($timeDiff > 300) {
+                            $isMovingLoss = ($pointDist > 500 && (($lastP->speed ?? 0) > 15 || ($p->speed ?? 0) > 15));
+                            if (!$isMovingLoss) {
+                                $lastIdx = count($parkingEvents) - 1;
+                                if ($lastIdx >= 0 && $this->haversineMeters($parkingEvents[$lastIdx]['lat'], $parkingEvents[$lastIdx]['lng'], (float)$lastP->latitude, (float)$lastP->longitude) < 100) {
+                                    $parkingEvents[$lastIdx]['dur'] = $t1 - strtotime($parkingEvents[$lastIdx]['start']);
+                                } else {
+                                    $parkingEvents[] = [
+                                        'lat'   => (float)$lastP->latitude,
+                                        'lng'   => (float)$lastP->longitude,
+                                        'start' => $lastP->gps_time,
+                                        'dur'   => $timeDiff,
+                                    ];
+                                }
+                            }
+                        }
+
+                        if ($pointDist < 50000) {
+                            if ((($p->speed ?? 0) > 2) || $pointDist > 10) {
+                                $totalDistMeters += $pointDist;
+                            }
+                        }
+                    }
+                    $lastP = $p;
+                }
+            }
+
+            $distKm = round($totalDistMeters / 1000, 2);
+            $fuelRatio = ($dev->fuel_ratio && $dev->fuel_ratio > 0) ? (float) $dev->fuel_ratio : 10.0;
+            $fuelLiters = round($distKm / $fuelRatio, 2);
+            $fuelCost = round($fuelLiters * 10000);
+
+            $pCount = count($parkingEvents);
+            $pSec = array_sum(array_column($parkingEvents, 'dur'));
+            $pHours = floor($pSec / 3600);
+            $pMins = floor(($pSec % 3600) / 60);
+            $pFormatted = $pSec > 0 ? (($pHours > 0 ? "{$pHours}j " : '') . "{$pMins}m") : '0m';
+
+            if ($pointsCount === 0) {
+                $statusKey = 'offline';
+                $statusLabel = 'Tidak Ada Sinyal';
+            } elseif ($distKm > 0.5) {
+                $statusKey = 'active';
+                $statusLabel = 'Aktif Beroperasi';
+            } else {
+                $statusKey = 'parked';
+                $statusLabel = 'Parkir / Diam';
+            }
+
+            $totalDistanceKm += $distKm;
+            $totalParkingCount += $pCount;
+            $totalParkingSec += $pSec;
+            $totalFuelLiters += $fuelLiters;
+            $totalFuelCost += $fuelCost;
+
+            $vehicles[] = [
+                'id'                => $dev->id,
+                'name'              => $dev->name,
+                'plate_number'      => $dev->plate_number,
+                'imei'              => $dev->imei,
+                'module_type'       => $dev->module_type ?? 'GT06N',
+                'fuel_ratio'        => $fuelRatio,
+                'points'            => $pointsCount,
+                'first_gps_time'    => $firstTime,
+                'last_gps_time'     => $lastTime,
+                'distance_km'       => $distKm,
+                'parking_count'     => $pCount,
+                'parking_sec'       => $pSec,
+                'parking_formatted' => $pFormatted,
+                'fuel_liters'       => $fuelLiters,
+                'fuel_cost'         => $fuelCost,
+                'status_key'        => $statusKey,
+                'status_label'      => $statusLabel,
+            ];
+        }
+
+        $allHours = floor($totalParkingSec / 3600);
+        $allMins = floor(($totalParkingSec % 3600) / 60);
+        $allParkingFormatted = ($allHours > 0 ? "{$allHours}j " : '') . "{$allMins}m";
+
+        return [
+            'summary' => [
+                'total_vehicles'          => count($devices),
+                'active_vehicles'         => $activeVehiclesCount,
+                'total_points'            => $totalPoints,
+                'total_distance_km'       => round($totalDistanceKm, 2),
+                'total_parking_count'     => $totalParkingCount,
+                'total_parking_sec'       => $totalParkingSec,
+                'total_parking_formatted' => $allParkingFormatted,
+                'total_fuel_liters'       => round($totalFuelLiters, 2),
+                'total_fuel_cost'         => $totalFuelCost,
+            ],
+            'vehicles' => $vehicles,
+        ];
+    }
+
     /**
      * Hitung titik parkir secara cerdas:
      * 1. Deteksi jeda henti (timeDiff > 300s).

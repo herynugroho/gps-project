@@ -258,6 +258,57 @@ class GpsFeatureTest extends TestCase
         $this->assertEquals('30 mnt', $data[0]['durasi']);
         $this->assertStringContainsString('-5.147665,119.432731', $data[0]['koordinat_gps']);
     }
+
+    public function test_rekap_riwayat_index_accessible_by_authenticated_user(): void
+    {
+        $response = $this->actingAs($this->user)->get('/management/rekap-riwayat');
+        $response->assertStatus(200);
+        $response->assertSee('Rekapan Riwayat Seluruh Armada');
+        $response->assertSee($this->device->name);
+    }
+
+    public function test_rekap_riwayat_data_api_calculates_fleet_metrics(): void
+    {
+        $today = Carbon::today('Asia/Makassar')->toDateString();
+
+        $response = $this->actingAs($this->user)->getJson("/management/rekap-riwayat/data?date={$today}");
+        $response->assertStatus(200);
+
+        $data = $response->json();
+        $this->assertArrayHasKey('summary', $data);
+        $this->assertArrayHasKey('vehicles', $data);
+
+        $summary = $data['summary'];
+        $this->assertGreaterThanOrEqual(1, $summary['total_vehicles']);
+        $this->assertGreaterThanOrEqual(1, $summary['active_vehicles']);
+        $this->assertGreaterThanOrEqual(1, $summary['total_points']);
+
+        $vehicles = collect($data['vehicles']);
+        $matched = $vehicles->firstWhere('imei', $this->device->imei);
+        $this->assertNotNull($matched);
+        $this->assertEquals($this->device->name, $matched['name']);
+        $this->assertEquals($this->device->plate_number, $matched['plate_number']);
+        $this->assertGreaterThanOrEqual(1, $matched['points']);
+        $this->assertArrayHasKey('distance_km', $matched);
+        $this->assertArrayHasKey('fuel_liters', $matched);
+        $this->assertArrayHasKey('fuel_cost', $matched);
+        $this->assertArrayHasKey('parking_count', $matched);
+    }
+
+    public function test_rekap_riwayat_export_downloads_csv(): void
+    {
+        $today = Carbon::today('Asia/Makassar')->toDateString();
+
+        $response = $this->actingAs($this->user)->get("/management/rekap-riwayat/export?date={$today}");
+        $response->assertStatus(200);
+        $response->assertHeader('Content-Disposition', "attachment; filename=\"Rekap_Riwayat_Armada_{$today}.csv\"");
+        
+        $content = $response->getContent();
+        $this->assertStringContainsString('LAPORAN REKAPAN RIWAYAT & OPERASIONAL ARMADA', $content);
+        $this->assertStringContainsString($this->device->name, $content);
+        $this->assertStringContainsString($this->device->plate_number, $content);
+    }
 }
+
 
 

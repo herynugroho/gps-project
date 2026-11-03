@@ -34,9 +34,17 @@
                 <span class="text-[9px] font-bold text-blue-400 uppercase tracking-widest leading-none mt-0.5 block">Manajemen Armada</span>
             </div>
         </div>
-        <a href="/" class="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-3.5 py-2 rounded-xl transition text-xs font-bold uppercase flex items-center gap-2 border border-slate-700 active:scale-95">
-            <i class="fa-solid fa-map"></i> <span class="hidden sm:inline">Peta Monitoring</span>
-        </a>
+        <div class="flex items-center gap-2">
+            <a href="/management/rekap-riwayat" class="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-3 py-2 rounded-xl transition text-xs font-bold uppercase flex items-center gap-1.5 border border-slate-700 active:scale-95">
+                <i class="fa-solid fa-chart-pie text-blue-400"></i> <span class="hidden sm:inline">Rekap Riwayat</span>
+            </a>
+            <a href="/management/verifikasi" class="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-3 py-2 rounded-xl transition text-xs font-bold uppercase flex items-center gap-1.5 border border-slate-700 active:scale-95">
+                <i class="fa-solid fa-square-parking text-amber-400"></i> <span class="hidden sm:inline">Verifikasi</span>
+            </a>
+            <a href="/" class="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-3.5 py-2 rounded-xl transition text-xs font-bold uppercase flex items-center gap-2 border border-slate-700 active:scale-95">
+                <i class="fa-solid fa-map"></i> <span class="hidden sm:inline">Peta Monitoring</span>
+            </a>
+        </div>
     </nav>
 
     <div class="container mx-auto px-4 py-6 sm:py-8 max-w-5xl">

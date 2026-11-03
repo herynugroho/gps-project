@@ -43,6 +43,11 @@ Route::middleware('auth')->group(function () {
     Route::post('/management/verifikasi/simpan', [DashboardController::class, 'simpanVerifikasi'])->name('verifikasi.simpan');
     Route::get('/management/verifikasi/export', [DashboardController::class, 'exportVerifikasi'])->name('verifikasi.export');
 
+    // Rekapan Riwayat Seluruh Armada
+    Route::get('/management/rekap-riwayat', [DashboardController::class, 'indexRekapRiwayat'])->name('rekap.index');
+    Route::get('/management/rekap-riwayat/data', [DashboardController::class, 'getRekapRiwayatData'])->name('rekap.data');
+    Route::get('/management/rekap-riwayat/export', [DashboardController::class, 'exportRekapRiwayat'])->name('rekap.export');
+
     // Rute Logout
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 });

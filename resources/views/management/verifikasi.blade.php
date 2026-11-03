@@ -157,8 +157,11 @@
             </div>
         </div>
         
-        <div class="d-none d-sm-block">
-            <span class="badge bg-dark border border-secondary px-3 py-2 text-uppercase font-monospace" style="font-size: 10px; letter-spacing: 0.5px; color: #94a3b8; background-color: #111827 !important;">
+        <div class="d-flex align-items-center gap-2">
+            <a href="/management/rekap-riwayat" class="btn btn-sm btn-outline-light d-none d-md-inline-flex align-items-center gap-1.5" style="font-size: 11px; font-weight: 700; border-color: #334155; border-radius: 8px;">
+                <i class="fa-solid fa-chart-pie text-primary"></i> Rekap Riwayat
+            </a>
+            <span class="badge bg-dark border border-secondary px-3 py-2 text-uppercase font-monospace d-none d-sm-inline-block" style="font-size: 10px; letter-spacing: 0.5px; color: #94a3b8; background-color: #111827 !important;">
                 <i class="fa-solid fa-user-shield text-primary me-1"></i> Management Panel
             </span>
         </div>

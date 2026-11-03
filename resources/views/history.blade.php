@@ -101,9 +101,14 @@
                             <p class="text-[9px] md:text-[10px] text-blue-400 font-bold mt-1 uppercase tracking-widest font-mono">{{ $device->plate_number }}</p>
                         </div>
                     </div>
-                    <button onclick="window.print()" class="text-[9px] font-black uppercase bg-slate-800 px-3 py-2 rounded-lg border border-slate-700 hover:bg-slate-700 transition active:scale-95">
-                        <i class="fa-solid fa-print mr-1"></i> Cetak
-                    </button>
+                    <div class="flex items-center gap-1.5">
+                        <a href="/management/rekap-riwayat" class="text-[9px] font-black uppercase bg-slate-800 px-2.5 py-2 rounded-lg border border-slate-700 hover:bg-slate-700 transition active:scale-95 text-slate-300 hover:text-white" title="Rekapan Seluruh Armada">
+                            <i class="fa-solid fa-chart-pie text-blue-400 mr-1"></i> Rekap
+                        </a>
+                        <button onclick="window.print()" class="text-[9px] font-black uppercase bg-slate-800 px-3 py-2 rounded-lg border border-slate-700 hover:bg-slate-700 transition active:scale-95">
+                            <i class="fa-solid fa-print mr-1"></i> Cetak
+                        </button>
+                    </div>
                 </div>
 
                 <div class="space-y-3 hidden lg:block mt-4 lg:mt-0" id="filter-box">

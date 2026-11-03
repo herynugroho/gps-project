@@ -104,16 +104,19 @@
              <p class="text-center text-slate-400 text-[10px] py-10 font-bold uppercase tracking-widest">Memuat Armada...</p>
         </div>
 
-        <div class="p-5 border-t border-slate-100 bg-white flex flex-col gap-3 shrink-0">
-            <a href="/devices" class="flex items-center justify-center gap-2 w-full py-3.5 bg-slate-900 rounded-xl text-[10px] font-black text-white hover:bg-slate-800 transition uppercase">
-                <i class="fa-solid fa-gear text-blue-400"></i> Kelola Armada
+        <div class="p-5 border-t border-slate-100 bg-white flex flex-col gap-2.5 shrink-0">
+            <a href="/management/rekap-riwayat" class="flex items-center justify-center gap-2 w-full py-3 bg-blue-600 hover:bg-blue-700 rounded-xl text-[10px] font-black text-white transition uppercase shadow-md shadow-blue-500/20 active:scale-95">
+                <i class="fa-solid fa-chart-pie"></i> Rekapan Riwayat
             </a>
-            <a href="/management/verifikasi" class="flex items-center justify-center gap-2 w-full py-3.5 bg-slate-900 rounded-xl text-[10px] font-black text-white hover:bg-slate-800 transition uppercase">
-                <i class="fa-solid fa-gear text-blue-400"></i> Verifikasi Parkir
+            <a href="/management/verifikasi" class="flex items-center justify-center gap-2 w-full py-3 bg-slate-900 rounded-xl text-[10px] font-black text-white hover:bg-slate-800 transition uppercase active:scale-95">
+                <i class="fa-solid fa-square-parking text-amber-400"></i> Verifikasi Parkir
+            </a>
+            <a href="/devices" class="flex items-center justify-center gap-2 w-full py-3 bg-slate-900 rounded-xl text-[10px] font-black text-white hover:bg-slate-800 transition uppercase active:scale-95">
+                <i class="fa-solid fa-gear text-blue-400"></i> Kelola Armada
             </a>
             <form method="POST" action="{{ url('/logout') }}" class="m-0">
                 @csrf
-                <button type="submit" class="flex items-center justify-center gap-2 w-full py-3.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-[10px] font-black transition uppercase border border-red-100">
+                <button type="submit" class="flex items-center justify-center gap-2 w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-[10px] font-black transition uppercase border border-red-100 active:scale-95">
                     <i class="fa-solid fa-power-off"></i> Keluar Sistem
                 </button>
             </form>
